@@ -820,6 +820,10 @@
                         <input type="checkbox" id="chkNormalized">
                     </div>
                     <div class="switch-row">
+                        <span>Region Labels (r / x &amp; half of day)</span>
+                        <input type="checkbox" id="chkRegions" checked>
+                    </div>
+                    <div class="switch-row">
                         <span>Time Landmarks (day axis &amp; &#177;1 arcs)</span>
                         <input type="checkbox" id="chkLandmarks" checked>
                     </div>
@@ -1027,7 +1031,11 @@
                 const dim = SmithMath.daysInMonth(date);
                 const dayFrac = (date.getDate() - 1) + (date.getHours() + minutes / 60) / 24;
                 const monthFrac = date.getMonth() + dayFrac / dim;
-                const yearFrac = (date.getFullYear() % 10) + SmithMath.dayOfYear(date) / SmithMath.daysInYear(date);
+                // The year turns once per year, swept by the day of the year:
+                // 365 days across 360 degrees. Its radius is the two-digit year
+                // against a scale of 0 to 100, so 2026 sits at 0.26.
+                const dayOfYearFrac = SmithMath.dayOfYear(date) / SmithMath.daysInYear(date);
+                const yearTwoDigit = date.getFullYear() % 100;
 
                 const turn = (f, whole) => (f / whole) * (2 * Math.PI) - (Math.PI / 2);
 
@@ -1042,13 +1050,15 @@
                     hour: (date.getHours() + minutes / 60) / 24,
                     date: dayFrac / dim,
                     month: monthFrac / 12,
-                    year: yearFrac / 10
+                    year: yearTwoDigit / 100
                 };
 
                 // Either every wheel sits on its own fixed circle, or each one's
                 // radius is its own normalized value -- half past putting the
                 // minute arm at |Gamma| = 0.5.
-                const radiusOf = id => config.normalizedRadius
+                // The year always rides its own 0-to-100 scale; the rest only do
+                // when the reader asks for normalized radii.
+                const radiusOf = id => (config.normalizedRadius || id === 'year')
                     ? Math.max(0.02, Math.min(1, normal[id]))
                     : HAND_MAGS[id];
 
@@ -1063,8 +1073,8 @@
                               value: pad(date.getDate()) },
                     month:  { mag: radiusOf('month'), normal: normal.month,  phase: turn(monthFrac, 12), label: 'MO',
                               value: pad(date.getMonth() + 1) },
-                    year:   { mag: radiusOf('year'), normal: normal.year,   phase: turn(yearFrac, 10), label: 'Y',
-                              value: date.getFullYear().toString() }
+                    year:   { mag: radiusOf('year'), normal: normal.year,   phase: turn(dayOfYearFrac, 1), label: 'Y',
+                              value: pad(yearTwoDigit) }
                 };
             }
 
@@ -1293,6 +1303,7 @@
             showPivotTrace: true,
             normalizedRadius: false,
             showTimeLandmarks: true,
+            showRegions: true,
             plotPair: 'hour+minute',
             dayPathSampleMinutes: 2,
             colorEngine: 'rf-phasor', // 'date-dna' | 'mood' | 'rf-phasor'
@@ -1381,6 +1392,7 @@
             dayPathCache = null;   // the locus is a different curve now
             pivotTrace.length = 0; // and so is the pivot's path
         });
+        document.getElementById('chkRegions').addEventListener('change', e => config.showRegions = e.target.checked);
         document.getElementById('chkLandmarks').addEventListener('change', e => config.showTimeLandmarks = e.target.checked);
         document.getElementById('chkPivotTrace').addEventListener('change', e => {
             config.showPivotTrace = e.target.checked;
@@ -1885,6 +1897,55 @@
             ctx.restore();
         }
 
+        /**
+         * The eight regions the r = 1 circle and the x = +/-1 arcs cut the chart
+         * into, each named by its inequalities and by the half of the day it
+         * falls in.
+         *
+         * The x = +1 arc reads as hours 1 to 12 and the x = -1 arc as 0 down to
+         * -12, so everything above the real axis is the morning half and
+         * everything below it the afternoon half. A representative z is picked
+         * inside each region and mapped through Gamma = (z - 1)/(z + 1).
+         */
+        const CHART_REGIONS = [
+            { r: 0.4, x: 0.5,  lines: ['r < 1', '0 < x < 1'],  when: 'morning' },
+            { r: 0.4, x: 2.2,  lines: ['r < 1', 'x > 1'],      when: 'late morning' },
+            { r: 2.2, x: 0.5,  lines: ['r > 1', '0 < x < 1'],  when: 'morning' },
+            { r: 2.2, x: 2.2,  lines: ['r > 1', 'x > 1'],      when: 'late morning' },
+            { r: 0.4, x: -0.5, lines: ['r < 1', '-1 < x < 0'], when: 'afternoon' },
+            { r: 0.4, x: -2.2, lines: ['r < 1', 'x < -1'],     when: 'evening' },
+            { r: 2.2, x: -0.5, lines: ['r > 1', '-1 < x < 0'], when: 'afternoon' },
+            { r: 2.2, x: -2.2, lines: ['r > 1', 'x < -1'],     when: 'evening' }
+        ];
+
+        function drawChartRegions(R) {
+            if (!config.showRegions) return;
+
+            ctx.save();
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            for (const region of CHART_REGIONS) {
+                // Gamma = (z - 1) / (z + 1), with the imaginary axis drawn upwards
+                const denom = (region.r + 1) * (region.r + 1) + region.x * region.x;
+                const gRe = (region.r * region.r + region.x * region.x - 1) / denom;
+                const gIm = (2 * region.x) / denom;
+
+                const x = centerX + gRe * R;
+                const y = centerY - gIm * R;
+
+                ctx.font = 'bold 10px ui-monospace, monospace';
+                ctx.fillStyle = 'rgba(226, 232, 240, 0.72)';
+                region.lines.forEach((line, i) => ctx.fillText(line, x, y + i * 12 - 10));
+
+                ctx.font = '9px -apple-system, BlinkMacSystemFont, sans-serif';
+                ctx.fillStyle = region.x > 0 ? tint('arcMorning', 0.9) : tint('arcEvening', 0.9);
+                ctx.fillText(region.when, x, y + region.lines.length * 12 - 8);
+            }
+
+            ctx.restore();
+        }
+
         function drawSmithChartGrid() {
             const R = scaleRadius;
 
@@ -1987,6 +2048,7 @@
             // enough that the axis and the rim have left the view
             placeLabels(onCurveLabels(R), 4);
 
+            drawChartRegions(R);
             drawTimeLandmarks(R);
 
             if (config.showRimScales) drawChartRimScales(R);
@@ -3347,7 +3409,7 @@
                 { key: 'hour', label: 'Hours / 24' },
                 { key: 'date', label: 'Day / month' },
                 { key: 'month', label: 'Month / 12' },
-                { key: 'year', label: 'Year / decade' }
+                { key: 'year', label: 'Year / 100' }
             ];
 
             document.getElementById('normalizedPanel').innerHTML = rows.map(row => {
