@@ -107,6 +107,8 @@ export interface SmithChartClockOptions {
     showAdmittancePath?: boolean;
     /** Classic "RADIALLY SCALED PARAMETERS" nomograph beneath the chart. */
     showRadialScales?: boolean;
+    /** Calibrated rim rings: wavelengths toward generator / load, and angle of Gamma. */
+    showRimScales?: boolean;
     /** Minutes between day-path samples. 1 = every minute (1440 points). */
     dayPathSampleMinutes?: number;
     spiralStartYear?: number;
@@ -643,9 +645,42 @@ export class SmithChartClock {
     // Configuration Options
     public options: Required<SmithChartClockOptions>;
 
-    // Pre-calculated Smith Chart Grid geometry cache
-    private static readonly RESISTANCE_CIRCLES = [0, 0.2, 0.5, 1.0, 2.0, 5.0];
-    private static readonly REACTANCE_ARCS = [0.2, 0.5, 1.0, 2.0, 5.0];
+    // Vertical band reserved beneath the chart for the radially scaled parameters
+    private stripTop: number = 0;
+    private stripHeight: number = 0;
+
+    // The day path is identical for every frame of a given day, so cache it
+    private dayPathCache: DayPathSummary | null = null;
+    private dayPathCacheKey: string = '';
+
+    // The gradations a printed Smith chart actually carries. Both the
+    // resistance circles and the reactance arcs use the same value set: coarse
+    // near the matched centre, opening out towards the open circuit, so the
+    // rendered spacing stays roughly even across the chart.
+    private static readonly GRID_MAJOR: number[] = [
+        0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9,
+        1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 3.0, 4.0, 5.0, 10, 20, 50
+    ];
+
+    private static readonly GRID_MINOR: number[] = (() => {
+        const out: number[] = [];
+        const span = (from: number, to: number, step: number): void => {
+            for (let v = from; v < to - 1e-9; v += step) out.push(Math.round(v * 1000) / 1000);
+        };
+        span(0.02, 0.2, 0.02);
+        span(0.2, 1.0, 0.05);
+        span(1.0, 2.0, 0.1);
+        span(2.0, 3.0, 0.2);
+        span(3.0, 5.0, 0.5);
+        span(5.0, 10, 1);
+        span(10, 20, 2);
+        span(20, 50, 10);
+        return out;
+    })();
+
+    // Which circles and arcs carry a printed number
+    private static readonly R_LABELLED: number[] = [0.1, 0.2, 0.3, 0.4, 0.5, 0.7, 1.0, 1.5, 2.0, 3.0, 5.0, 10, 20];
+    private static readonly X_LABELLED: number[] = [0.2, 0.4, 0.6, 0.8, 1.0, 1.5, 2.0, 3.0, 5.0, 10];
 
     constructor(canvas: HTMLCanvasElement, options?: SmithChartClockOptions) {
         this.canvas = canvas;
@@ -660,8 +695,17 @@ export class SmithChartClock {
             showCompositeVector: options?.showCompositeVector ?? true,
             showReactanceArcs: options?.showReactanceArcs ?? true,
             showResistanceCircles: options?.showResistanceCircles ?? true,
-            showHistoricalSpiral: options?.showHistoricalSpiral ?? true,
+            // The Date-DNA spiral is a decorative overlay, not an RF reading, and it
+            // obscures the day path. It stays available, but it is off by default.
+            showHistoricalSpiral: options?.showHistoricalSpiral ?? false,
             showAngleScale: options?.showAngleScale ?? true,
+            showCalendarHands: options?.showCalendarHands ?? true,
+            showVswrCircles: options?.showVswrCircles ?? true,
+            showDayPath: options?.showDayPath ?? true,
+            showAdmittancePath: options?.showAdmittancePath ?? false,
+            showRadialScales: options?.showRadialScales ?? true,
+            showRimScales: options?.showRimScales ?? true,
+            dayPathSampleMinutes: options?.dayPathSampleMinutes ?? 2,
             spiralStartYear: options?.spiralStartYear ?? 1900,
             spiralEndYear: options?.spiralEndYear ?? 2050,
             colorEngine: options?.colorEngine ?? 'rf-phasor'
@@ -691,10 +735,18 @@ export class SmithChartClock {
         this.ctx.resetTransform?.();
         this.ctx.scale(this.dpr, this.dpr);
 
+        // Reserve a band at the foot of the canvas for the radially scaled
+        // parameters, then centre the chart in whatever is left above it.
+        this.stripHeight = this.options.showRadialScales
+            ? Math.max(120, Math.min(210, height * 0.28))
+            : 0;
+        this.stripTop = height - this.stripHeight;
+
+        const chartHeight = height - this.stripHeight;
         this.centerX = width / 2;
-        this.centerY = height / 2;
-        // Leave 28px padding for angle & wavelength calibrations
-        this.scaleRadius = Math.max(10, Math.min(this.centerX, this.centerY) - 32);
+        this.centerY = chartHeight / 2;
+        // Leave 32px padding for angle & wavelength calibrations
+        this.scaleRadius = Math.max(10, Math.min(width / 2, chartHeight / 2) - 32);
     }
 
     /**
@@ -838,63 +890,81 @@ export class SmithChartClock {
         ctx.lineTo(this.centerX + R, this.centerY);
         ctx.stroke();
 
-        // 3. Draw Constant Resistance (r) Circles
-        // Circle center: (r / (1 + r), 0) in Gamma plane
-        // Radius: 1 / (1 + r)
+        // 3. Draw Constant Resistance (r) Circles, minor gradations first.
+        // Circle center: (r / (1 + r), 0) in Gamma plane, radius 1 / (1 + r)
         if (this.options.showResistanceCircles) {
-            SmithChartClock.RESISTANCE_CIRCLES.forEach(r => {
-                if (r === 0) return; // Outer boundary already drawn
-                const circleRadius = R / (1 + r);
-                const circleCenterOffsetX = (r / (1 + r)) * R;
-                const circleCenterX = this.centerX + circleCenterOffsetX;
-
-                ctx.strokeStyle = (r === 1.0) ? colors.gridMajor : colors.gridMinor;
-                ctx.lineWidth = (r === 1.0) ? 1.5 : 1.0;
+            const drawR = (r: number, stroke: string, lw: number): void => {
+                ctx.strokeStyle = stroke;
+                ctx.lineWidth = lw;
                 ctx.beginPath();
-                ctx.arc(circleCenterX, this.centerY, circleRadius, 0, 2 * Math.PI);
+                ctx.arc(this.centerX + (r / (1 + r)) * R, this.centerY, R / (1 + r), 0, 2 * Math.PI);
                 ctx.stroke();
+            };
 
-                // Draw small label along the real axis
-                ctx.fillStyle = colors.text;
-                ctx.font = '9px monospace';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'bottom';
+            SmithChartClock.GRID_MINOR.forEach(r => drawR(r, colors.gridMinor, 0.4));
+            SmithChartClock.GRID_MAJOR.forEach(r =>
+                drawR(r, r === 1.0 ? colors.gridMajor : colors.gridMinor, r === 1.0 ? 1.3 : 0.75));
+
+            // Printed values, sitting on the real axis
+            ctx.fillStyle = colors.text;
+            ctx.font = '7px ui-monospace, monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            SmithChartClock.R_LABELLED.forEach(r => {
                 const labelX = this.centerX + ((r - 1) / (r + 1)) * R;
-                if (Math.abs(labelX - this.centerX) > 10 && labelX < this.centerX + R - 15) {
-                    ctx.fillText(`r=${r}`, labelX, this.centerY - 2);
-                }
+                if (labelX < this.centerX + R - 12) ctx.fillText(r.toString(), labelX, this.centerY - 3);
             });
         }
 
         // 4. Draw Constant Reactance (x) Arcs
-        // Center: (1, 1/x), Radius: 1/|x|
-        // Arcs are clipped inside the unit circle |Gamma| <= 1
+        // Center: (1, 1/x), Radius: 1/|x|, clipped inside |Gamma| <= 1
         if (this.options.showReactanceArcs) {
             ctx.save();
-            // Create circular clipping path matching unit circle
             ctx.beginPath();
             ctx.arc(this.centerX, this.centerY, R, 0, 2 * Math.PI);
             ctx.clip();
 
-            SmithChartClock.REACTANCE_ARCS.forEach(x => {
-                // Inductive arc (+jx, Upper plane) & Capacitive arc (-jx, Lower plane)
-                [x, -x].forEach(reactanceVal => {
-                    const arcRadius = (1 / Math.abs(reactanceVal)) * R;
-                    const arcCenterY = this.centerY - (1 / reactanceVal) * R;
-                    const arcCenterX = this.centerX + R;
+            const drawX = (val: number, stroke: string, lw: number): void => {
+                ctx.strokeStyle = stroke;
+                ctx.lineWidth = lw;
+                ctx.beginPath();
+                ctx.arc(this.centerX + R, this.centerY - (1 / val) * R, (1 / Math.abs(val)) * R, 0, 2 * Math.PI);
+                ctx.stroke();
+            };
 
-                    ctx.strokeStyle = (Math.abs(reactanceVal) === 1.0) ? colors.gridMajor : colors.gridMinor;
-                    ctx.lineWidth = (Math.abs(reactanceVal) === 1.0) ? 1.2 : 0.8;
-                    ctx.setLineDash([4, 2]);
-
-                    ctx.beginPath();
-                    ctx.arc(arcCenterX, arcCenterY, arcRadius, 0, 2 * Math.PI);
-                    ctx.stroke();
-                });
+            SmithChartClock.GRID_MINOR.forEach(x => {
+                drawX(x, colors.gridMinor, 0.4);
+                drawX(-x, colors.gridMinor, 0.4);
+            });
+            SmithChartClock.GRID_MAJOR.forEach(x => {
+                const stroke = x === 1.0 ? colors.gridMajor : colors.gridMinor;
+                const lw = x === 1.0 ? 1.2 : 0.7;
+                drawX(x, stroke, lw);
+                drawX(-x, stroke, lw);
             });
 
-            ctx.setLineDash([]);
             ctx.restore();
+
+            // Printed values, where each arc meets the rim. z = jx puts that
+            // meeting point at Gamma = (jx - 1)/(jx + 1), always on |Gamma| = 1.
+            // The grid draws +jx in the upper half, so the imaginary axis is
+            // flipped here: (cos, -sin).
+            ctx.fillStyle = colors.text;
+            ctx.font = '7px ui-monospace, monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            SmithChartClock.X_LABELLED.forEach(x => {
+                [x, -x].forEach(val => {
+                    const denom = 1 + val * val;
+                    const angle = Math.atan2((2 * val) / denom, (val * val - 1) / denom);
+                    const rr = R - 30;
+                    ctx.fillText(
+                        (val > 0 ? '+j' : '-j') + Math.abs(val),
+                        this.centerX + rr * Math.cos(angle),
+                        this.centerY - rr * Math.sin(angle)
+                    );
+                });
+            });
         }
 
         // 5. Draw Prime Center Marker (Matched 50 Ohm Point Gamma = 0)
@@ -902,6 +972,9 @@ export class SmithChartClock {
         ctx.beginPath();
         ctx.arc(this.centerX, this.centerY, 4, 0, 2 * Math.PI);
         ctx.fill();
+
+        // 5b. Calibrated rim rings
+        if (this.options.showRimScales) this.drawChartRimScales(R);
 
         // 6. Draw Peripheral Degree & Clock Hour Ticks
         if (this.options.showAngleScale) {
@@ -1036,10 +1109,27 @@ export class SmithChartClock {
         color: string,
         lineWidth: number,
         label?: string,
-        glow: boolean = true
+        glow: boolean = true,
+        origin?: CartesianCoordinate
     ): CartesianCoordinate {
-        const target = this.polarToCartesian(polar);
         const ctx = this.ctx;
+
+        // The arms no longer grow out of the chart centre: they emanate from the
+        // hour of day, the dot riding the real axis.
+        const o = origin ?? { x: this.centerX, y: this.centerY };
+
+        // Where that ray leaves the unit circle, so no arm overshoots the chart
+        // once its origin has slid away from the middle.
+        const ox = o.x - this.centerX;
+        const oy = o.y - this.centerY;
+        const dx = Math.cos(polar.phase);
+        const dy = Math.sin(polar.phase);
+        const proj = ox * dx + oy * dy;
+        const limit = -proj + Math.sqrt(
+            Math.max(0, proj * proj + this.scaleRadius * this.scaleRadius - (ox * ox + oy * oy))
+        );
+        const length = Math.min(polar.magnitude * this.scaleRadius, limit * 0.97);
+        const target: CartesianCoordinate = { x: o.x + length * dx, y: o.y + length * dy };
 
         ctx.save();
         if (glow) {
@@ -1053,7 +1143,7 @@ export class SmithChartClock {
 
         // Draw main vector shaft
         ctx.beginPath();
-        ctx.moveTo(this.centerX, this.centerY);
+        ctx.moveTo(o.x, o.y);
         ctx.lineTo(target.x, target.y);
         ctx.stroke();
 
@@ -1080,8 +1170,8 @@ export class SmithChartClock {
         if (label) {
             ctx.shadowBlur = 0;
             ctx.fillStyle = color;
-            ctx.font = 'bold 11px monospace';
-            const labelDist = 14;
+            ctx.font = 'bold 14px monospace';
+            const labelDist = Math.max(16, lineWidth * 2.6);
             const lx = target.x + labelDist * Math.cos(angle);
             const ly = target.y + labelDist * Math.sin(angle);
             ctx.textAlign = 'center';
@@ -1091,6 +1181,624 @@ export class SmithChartClock {
 
         ctx.restore();
         return target;
+    }
+
+    /**
+     * Accent colours for the overlays that the base palette does not name.
+     */
+    private getOverlayColors() {
+        const base = this.getThemeColors();
+        const light = this.options.theme === 'smith-classic' || this.options.theme === 'solar-light';
+        return {
+            ...base,
+            stripRule: light ? '#334155' : '#3f4c63',
+            stripTick: light ? '#475569' : '#55657f',
+            stripText: light ? '#0f172a' : '#9fb0c7',
+            stripTitle: light ? '#1e293b' : '#cbd5e1',
+            stripCursor: light ? '#dc2626' : '#f43f5e',
+            dayPathPast: light ? '#0f766e' : '#22d3ee',
+            dayPathFuture: light ? 'rgba(15, 118, 110, 0.22)' : 'rgba(34, 211, 238, 0.18)',
+            vswrCircle: light ? 'rgba(220, 38, 38, 0.35)' : 'rgba(244, 63, 94, 0.35)',
+            admittance: light ? 'rgba(124, 58, 237, 0.45)' : 'rgba(168, 85, 247, 0.4)'
+        };
+    }
+
+    /**
+     * Returns the day path for the given date, rebuilding it only when the
+     * calendar day or the sample rate actually changes.
+     */
+    public getDayPath(date: Date = this.getEffectiveTime()): DayPathSummary {
+        const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}-${this.options.dayPathSampleMinutes}`;
+        if (!this.dayPathCache || this.dayPathCacheKey !== key) {
+            this.dayPathCache = SmithChartRFMath.buildDayPath(date, this.options.dayPathSampleMinutes);
+            this.dayPathCacheKey = key;
+        }
+        return this.dayPathCache;
+    }
+
+    /**
+     * Constant-VSWR circles: centred on the origin with radius |Gamma|.
+     *
+     * Each clock wheel rides one of these, so the dial rings and the RF reading
+     * are literally the same curve. The composite phasor's circle moves.
+     */
+    private drawVswrCircles(compositeRho: number): void {
+        const ctx = this.ctx;
+        const colors = this.getOverlayColors();
+        const R = this.scaleRadius;
+
+        const rings: Array<{ rho: number; strong: boolean; note: string }> = [
+            { rho: HAND_MAGNITUDES.minute, strong: false, note: 'M' },
+            { rho: HAND_MAGNITUDES.hour, strong: false, note: 'H' },
+            { rho: compositeRho, strong: true, note: 'Σ' }
+        ];
+        if (this.options.showCalendarHands) {
+            rings.splice(2, 0,
+                { rho: HAND_MAGNITUDES.date, strong: false, note: 'D' },
+                { rho: HAND_MAGNITUDES.month, strong: false, note: 'MO' },
+                { rho: HAND_MAGNITUDES.year, strong: false, note: 'Y' }
+            );
+        }
+
+        ctx.save();
+        for (const ring of rings) {
+            if (ring.rho <= 0.005) continue;
+            ctx.strokeStyle = ring.strong ? colors.stripCursor : colors.vswrCircle;
+            ctx.lineWidth = ring.strong ? 1.6 : 0.9;
+            ctx.setLineDash(ring.strong ? [] : [2, 4]);
+            ctx.beginPath();
+            ctx.arc(this.centerX, this.centerY, ring.rho * R, 0, 2 * Math.PI);
+            ctx.stroke();
+
+            // Label each circle at its own angle, so the readings do not pile
+            // up along a single diagonal. -2.356 rad is 135 deg in canvas space.
+            const swr = ring.rho >= 0.9999 ? '∞' : ((1 + ring.rho) / (1 - ring.rho)).toFixed(2);
+            const a = -2.356 + rings.indexOf(ring) * 0.34;
+            ctx.setLineDash([]);
+            ctx.fillStyle = ring.strong ? colors.stripCursor : colors.stripTick;
+            ctx.font = ring.strong ? 'bold 9px ui-monospace, monospace' : '8px ui-monospace, monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(
+                `${ring.note} ${swr}:1`,
+                this.centerX + ring.rho * R * Math.cos(a),
+                this.centerY + ring.rho * R * Math.sin(a)
+            );
+        }
+        ctx.restore();
+    }
+
+    /**
+     * The path of the day: 24 hours of reflection coefficient, traced out by
+     * the hour and minute arms and coloured by time of day. The portion already
+     * elapsed is drawn solid; the rest of the day is a faint preview.
+     */
+    private drawDayPath(now: Date): void {
+        const ctx = this.ctx;
+        const colors = this.getOverlayColors();
+        const path = this.getDayPath(now);
+        const nowMinutes = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
+
+        ctx.save();
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        // Optional admittance locus: the same day reflected through the origin,
+        // because y = 1/z sits diametrically opposite z on the chart.
+        if (this.options.showAdmittancePath) {
+            ctx.strokeStyle = colors.admittance;
+            ctx.lineWidth = 1.0;
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath();
+            path.samples.forEach((sample, i) => {
+                const pt = this.polarToCartesian({
+                    magnitude: sample.polar.magnitude,
+                    phase: sample.polar.phase + Math.PI
+                });
+                if (i === 0) ctx.moveTo(pt.x, pt.y); else ctx.lineTo(pt.x, pt.y);
+            });
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        // A whole day of the interference sum is twenty-odd loops, so it is
+        // drawn as a history rather than a solid curve: the day so far sits far
+        // back, and only the last few hours come forward as a bright trail.
+        const TRAIL_MINUTES = 180;
+        let prev = this.polarToCartesian(path.samples[0].polar);
+        for (let i = 1; i < path.samples.length; i++) {
+            const sample = path.samples[i];
+            const pt = this.polarToCartesian(sample.polar);
+            const age = nowMinutes - sample.minuteOfDay;
+            const hue = 190 + (sample.minuteOfDay / 1440) * 150; // dawn cyan -> dusk magenta
+
+            if (age < 0) {
+                ctx.strokeStyle = colors.dayPathFuture;
+                ctx.lineWidth = 0.6;
+            } else if (age <= TRAIL_MINUTES) {
+                const freshness = 1 - age / TRAIL_MINUTES;
+                ctx.strokeStyle = `hsla(${hue.toFixed(0)}, 90%, 62%, ${(0.2 + 0.7 * freshness).toFixed(3)})`;
+                ctx.lineWidth = 0.8 + 1.2 * freshness;
+            } else {
+                ctx.strokeStyle = `hsla(${hue.toFixed(0)}, 70%, 58%, 0.32)`;
+                ctx.lineWidth = 0.9;
+            }
+
+            ctx.beginPath();
+            ctx.moveTo(prev.x, prev.y);
+            ctx.lineTo(pt.x, pt.y);
+            ctx.stroke();
+            prev = pt;
+        }
+
+        // Hour stations around the locus
+        ctx.font = '8px ui-monospace, monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        for (const sample of path.samples) {
+            if (sample.minuteOfDay % 60 !== 0 || sample.minuteOfDay === 1440) continue;
+            const pt = this.polarToCartesian(sample.polar);
+            const elapsed = sample.minuteOfDay <= nowMinutes;
+            ctx.fillStyle = elapsed ? colors.dayPathPast : colors.dayPathFuture;
+            ctx.globalAlpha = elapsed ? 0.55 : 1;
+            ctx.beginPath();
+            ctx.arc(pt.x, pt.y, sample.minuteOfDay % 360 === 0 ? 2.4 : 1.2, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.globalAlpha = 1;
+        }
+
+        // Best and worst match of the day
+        for (const mark of [
+            { sample: path.bestMatch, color: '#10b981', tag: 'MIN |Γ|' },
+            { sample: path.worstMatch, color: '#ef4444', tag: 'MAX |Γ|' }
+        ]) {
+            const pt = this.polarToCartesian(mark.sample.polar);
+            ctx.strokeStyle = mark.color;
+            ctx.lineWidth = 1.4;
+            ctx.beginPath();
+            ctx.arc(pt.x, pt.y, 4.5, 0, 2 * Math.PI);
+            ctx.stroke();
+        }
+
+        ctx.restore();
+    }
+
+    /**
+     * The three calibrated rings a printed Smith chart carries around its rim.
+     *
+     * Outermost is wavelengths toward the generator, which advance clockwise
+     * from the short circuit at the left; inside it the same scale running the
+     * other way, toward the load; innermost the angle of the reflection
+     * coefficient in degrees. One full turn of the chart is half a wavelength,
+     * which is why both wavelength rings close at 0.5.
+     *
+     * The grid puts +jx in the upper half, so every angle here is drawn with the
+     * imaginary axis flipped: (cos, -sin).
+     */
+    private drawChartRimScales(R: number): void {
+        const ctx = this.ctx;
+        const colors = this.getOverlayColors();
+
+        const at = (angle: number, radius: number): CartesianCoordinate => ({
+            x: this.centerX + radius * Math.cos(angle),
+            y: this.centerY - radius * Math.sin(angle)
+        });
+
+        const rings = [R, R - 9, R - 18, R - 27];
+
+        ctx.save();
+
+        // Ring separators
+        ctx.strokeStyle = colors.realAxis;
+        ctx.lineWidth = 0.6;
+        for (const radius of rings.slice(1)) {
+            ctx.beginPath();
+            ctx.arc(this.centerX, this.centerY, radius, 0, 2 * Math.PI);
+            ctx.stroke();
+        }
+
+        ctx.font = '6px ui-monospace, monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // Two wavelength rings: 0 at the short circuit, half a wavelength per turn
+        const wavelengthRings: Array<{ outer: number; sign: 1 | -1; color: string }> = [
+            { outer: rings[0], sign: 1, color: colors.outerCircle },
+            { outer: rings[1], sign: -1, color: colors.stripTick }
+        ];
+
+        for (const { outer, sign, color } of wavelengthRings) {
+            ctx.strokeStyle = color;
+            ctx.fillStyle = color;
+            for (let step = 0; step < 250; step++) {
+                const wl = step * 0.002;
+                const angle = Math.PI + sign * (wl / 0.5) * 2 * Math.PI;
+                const thousandths = Math.round(wl * 1000);
+                const major = thousandths % 10 === 0;
+                const depth = major ? 6 : 2;
+
+                const a = at(angle, outer);
+                const b = at(angle, outer - depth);
+                ctx.lineWidth = major ? 0.8 : 0.4;
+                ctx.beginPath();
+                ctx.moveTo(a.x, a.y);
+                ctx.lineTo(b.x, b.y);
+                ctx.stroke();
+
+                if (thousandths % 50 === 0) {
+                    const t = at(angle, outer - 4.5);
+                    ctx.save();
+                    ctx.translate(t.x, t.y);
+                    ctx.rotate(-angle + Math.PI / 2);
+                    ctx.fillText(wl.toFixed(2).slice(1), 0, 0);
+                    ctx.restore();
+                }
+            }
+        }
+
+        // Angle of the reflection coefficient, +180 back round to -180
+        const angleRingOuter = rings[2];
+        ctx.strokeStyle = colors.stripCursor;
+        ctx.fillStyle = colors.stripCursor;
+        for (let deg = -180; deg < 180; deg += 2) {
+            const angle = (deg * Math.PI) / 180;
+            const major = deg % 10 === 0;
+            const a = at(angle, angleRingOuter);
+            const b = at(angle, angleRingOuter - (major ? 6 : 2.5));
+            ctx.lineWidth = major ? 0.7 : 0.35;
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+            ctx.stroke();
+
+            if (deg % 30 === 0) {
+                const t = at(angle, angleRingOuter - 4.5);
+                ctx.save();
+                ctx.translate(t.x, t.y);
+                ctx.rotate(-angle + Math.PI / 2);
+                ctx.fillText(deg.toString(), 0, 0);
+                ctx.restore();
+            }
+        }
+
+        ctx.restore();
+    }
+
+    /**
+     * The point on the real axis that stands for the current hour of day.
+     */
+    public dayOriginFor(now: Date): CartesianCoordinate {
+        const secondsIntoDay =
+            now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds() + now.getMilliseconds() / 1000;
+        return {
+            x: this.centerX + (2 * (secondsIntoDay / 86400) - 1) * this.scaleRadius,
+            y: this.centerY
+        };
+    }
+
+    /**
+     * The ghost of a hand: the traditional clock reading.
+     *
+     * The solid arms emanate from the hour of day, which slides along the real
+     * axis, so they no longer line up with the dial numbers. This faint line
+     * runs from the matched centre out to the rim in the same direction, which
+     * is what actually points at the 10 at twenty to eleven.
+     */
+    private drawGhostHand(polar: PolarCoordinate, color: string): void {
+        const ctx = this.ctx;
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.globalAlpha = 0.3;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath();
+        ctx.moveTo(this.centerX, this.centerY);
+        ctx.lineTo(
+            this.centerX + this.scaleRadius * Math.cos(polar.phase),
+            this.centerY + this.scaleRadius * Math.sin(polar.phase)
+        );
+        ctx.stroke();
+
+        // and a bead where the arm's own magnitude falls on that line
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 0.65;
+        ctx.fillStyle = color;
+        const bead = this.polarToCartesian(polar);
+        ctx.beginPath();
+        ctx.arc(bead.x, bead.y, 2.5, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.restore();
+    }
+
+    /**
+     * The real axis, read as one day.
+     *
+     * The horizontal line across the chart runs from the short circuit on the
+     * left to the open circuit on the right -- the same span the transmission
+     * coefficient ruler covers, tau = 1 + Gamma going 0 to 2. Mapping local
+     * midnight to midnight onto it turns that axis into a day bar, and the
+     * bright dot riding it says how far through the day we are: 00:00 sits hard
+     * left, 23:59 hard right.
+     */
+    private drawDayAxis(now: Date): void {
+        const ctx = this.ctx;
+        const colors = this.getOverlayColors();
+
+        const secondsIntoDay =
+            now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds() + now.getMilliseconds() / 1000;
+        const dayFraction = secondsIntoDay / 86400;
+
+        const xOfFraction = (f: number): number => this.centerX + (2 * f - 1) * this.scaleRadius;
+        const axisY = this.centerY;
+
+        ctx.save();
+
+        // Hour ticks along the axis, taller at the quarter days
+        ctx.strokeStyle = colors.realAxis;
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        for (let h = 0; h <= 24; h++) {
+            const x = xOfFraction(h / 24);
+            const len = (h % 6 === 0) ? 7 : (h % 3 === 0 ? 4.5 : 2.5);
+            ctx.moveTo(x, axisY - len);
+            ctx.lineTo(x, axisY + len);
+        }
+        ctx.stroke();
+
+        ctx.fillStyle = colors.stripTick;
+        ctx.font = '7px ui-monospace, monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        for (let h = 0; h <= 24; h += 6) {
+            ctx.fillText(`${h.toString().padStart(2, '0')}h`, xOfFraction(h / 24), axisY + 9);
+        }
+
+        // Elapsed portion of the day, drawn over the axis
+        const dotX = xOfFraction(dayFraction);
+        ctx.strokeStyle = colors.dayPathPast;
+        ctx.lineWidth = 2.4;
+        ctx.beginPath();
+        ctx.moveTo(this.centerX - this.scaleRadius, axisY);
+        ctx.lineTo(dotX, axisY);
+        ctx.stroke();
+
+        // The dot itself
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = colors.dayPathPast;
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.arc(dotX, axisY, 5, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // and the time it stands for
+        const pad = (n: number): string => n.toString().padStart(2, '0');
+        ctx.fillStyle = colors.stripTitle;
+        ctx.font = 'bold 10px ui-monospace, monospace';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(`${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`, dotX, axisY - 10);
+
+        ctx.fillStyle = colors.stripTick;
+        ctx.font = '7px ui-monospace, monospace';
+        ctx.fillText(`${(dayFraction * 100).toFixed(2)}% of day`, dotX, axisY - 21);
+
+        ctx.restore();
+    }
+
+    // ---------------------------------------------------------------- strip
+
+    /** Horizontal position of a radius on one ruler of the nomograph. */
+    private stripX(scale: RadialScaleDef, rho: number, rowLeft: number, rowRight: number): number {
+        const cx = this.centerX;
+        const clamped = Math.max(0, Math.min(1, rho));
+        if (scale.side === 'left') return cx - clamped * (cx - rowLeft);
+        if (scale.side === 'right') return cx + clamped * (rowRight - cx);
+        // 'full': linear in Gamma, 0 at the origin, 1 at the centre, 2 at the open
+        return rowLeft + ((1 + clamped) / 2) * (rowRight - rowLeft);
+    }
+
+    /**
+     * Renders the classic "RADIALLY SCALED PARAMETERS" nomograph beneath the
+     * chart, with a live cursor at the composite phasor's radius.
+     *
+     * Every ruler is scaled against the same radius |Gamma|, so one vertical
+     * line through the strip reads SWR, return loss, reflection and transmission
+     * coefficients for the current moment all at once.
+     */
+    private drawRadialParameterScales(cursorRho: number, cursorGammaRe: number): void {
+        if (!this.options.showRadialScales || this.stripHeight < 60) return;
+
+        const ctx = this.ctx;
+        const colors = this.getOverlayColors();
+        const width = this.canvas.width / this.dpr;
+
+        // The diagonal end labels lean out past the rulers, so the strip needs
+        // real gutters or they run off the canvas.
+        const padX = 58;
+        const left = padX;
+        const right = width - padX;
+        const cx = this.centerX;
+
+        const titleY = this.stripTop + 11;
+        const dirY = this.stripTop + 24;
+        const rowsTop = this.stripTop + 30;
+        // 14px of tail so the bottom ruler's ORIGIN mark stays inside the canvas
+        const rowH = (this.stripHeight - 36 - 14) / 6;
+        const slant = 4; // gentle trapezoid, exactly as on a printed chart
+
+        ctx.save();
+        ctx.textBaseline = 'alphabetic';
+
+        // Title and the two directions of travel along the line
+        ctx.fillStyle = colors.stripTitle;
+        ctx.font = '9px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('RADIALLY SCALED PARAMETERS', cx, titleY);
+
+        ctx.fillStyle = colors.stripTick;
+        ctx.font = '8px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.fillText('TOWARD LOAD →', left + (cx - left) / 2, dirY);
+        ctx.fillText('← TOWARD GENERATOR', cx + (right - cx) / 2, dirY);
+
+        const rowGeometry = (row: number) => {
+            const inset = row >= 5 ? 0 : (4 - row) * slant;
+            return {
+                y: rowsTop + (row + 1) * rowH,
+                rowLeft: left + inset,
+                rowRight: right - inset
+            };
+        };
+
+        // Rule line per row, plus the vertical end caps of the trapezoid
+        ctx.strokeStyle = colors.stripRule;
+        ctx.lineWidth = 0.8;
+        for (let row = 0; row < 6; row++) {
+            const g = rowGeometry(row);
+            ctx.beginPath();
+            ctx.moveTo(g.rowLeft, g.y);
+            ctx.lineTo(g.rowRight, g.y);
+            ctx.stroke();
+        }
+        const top = rowGeometry(0);
+        const bottom = rowGeometry(4);
+        ctx.beginPath();
+        ctx.moveTo(top.rowLeft, top.y - rowH);
+        ctx.lineTo(bottom.rowLeft, bottom.y);
+        ctx.moveTo(top.rowRight, top.y - rowH);
+        ctx.lineTo(bottom.rowRight, bottom.y);
+        ctx.stroke();
+
+        // Every ruler: minor ticks, printed values, and the diagonal end label
+        for (const scale of RADIAL_SCALES) {
+            const g = rowGeometry(scale.row);
+            this.drawRadialRuler(scale, g, rowH, colors);
+        }
+
+        // CENTER and ORIGIN reference marks
+        const bar = rowGeometry(5);
+        const triangle = (x: number, y: number, label: string) => {
+            ctx.fillStyle = colors.stripTitle;
+            ctx.beginPath();
+            ctx.moveTo(x, y - 4);
+            ctx.lineTo(x - 3.5, y + 1);
+            ctx.lineTo(x + 3.5, y + 1);
+            ctx.closePath();
+            ctx.fill();
+            ctx.font = '7px -apple-system, BlinkMacSystemFont, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(label, x, y + 9);
+        };
+        triangle(cx, bar.y - rowH + 2, 'CENTER');
+        triangle(bar.rowLeft, bar.y + 1, 'ORIGIN');
+
+        // Live cursor: one vertical line per half, at the current radius
+        const cursorRows = [rowGeometry(0), rowGeometry(4)];
+        const yTop = cursorRows[0].y - rowH;
+        const yBot = cursorRows[1].y;
+        ctx.strokeStyle = colors.stripCursor;
+        ctx.lineWidth = 1.2;
+        for (const side of ['left', 'right'] as const) {
+            const probe = RADIAL_SCALES.find(sc => sc.side === side)!;
+            const g = rowGeometry(probe.row);
+            const x = this.stripX(probe, cursorRho, g.rowLeft, g.rowRight);
+            ctx.beginPath();
+            ctx.moveTo(x, yTop);
+            ctx.lineTo(x, yBot);
+            ctx.stroke();
+        }
+        // and one on the full-width transmission ruler, which is linear in Gamma
+        const tau = 1 + cursorGammaRe;
+        const tauX = bar.rowLeft + (tau / 2) * (bar.rowRight - bar.rowLeft);
+        ctx.beginPath();
+        ctx.moveTo(tauX, bar.y - rowH + 4);
+        ctx.lineTo(tauX, bar.y);
+        ctx.stroke();
+
+        ctx.restore();
+    }
+
+    /**
+     * Draws one ruler: its ticks, its printed values and its diagonal label.
+     */
+    private drawRadialRuler(
+        scale: RadialScaleDef,
+        g: { y: number; rowLeft: number; rowRight: number },
+        rowH: number,
+        colors: ReturnType<SmithChartClock['getOverlayColors']>
+    ): void {
+        const ctx = this.ctx;
+        const isFull = scale.side === 'full';
+
+        const xOf = (value: number): number => {
+            if (isFull) return g.rowLeft + (value / 2) * (g.rowRight - g.rowLeft);
+            return this.stripX(scale, scale.rhoOf(value), g.rowLeft, g.rowRight);
+        };
+
+        // Minor ticks, interpolated in value space between the printed majors
+        ctx.strokeStyle = colors.stripTick;
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        for (let i = 0; i < scale.ticks.length - 1; i++) {
+            const a = scale.ticks[i];
+            const b = scale.ticks[i + 1];
+            if (!isFinite(a) || !isFinite(b)) continue;
+            for (let k = 1; k < 5; k++) {
+                const v = a + ((b - a) * k) / 5;
+                const x = xOf(v);
+                if (x < g.rowLeft - 0.5 || x > g.rowRight + 0.5) continue;
+                ctx.moveTo(x, g.y);
+                ctx.lineTo(x, g.y - 2.5);
+            }
+        }
+        ctx.stroke();
+
+        // Major ticks and their printed values, skipping any that would collide
+        ctx.strokeStyle = colors.stripRule;
+        ctx.lineWidth = 0.9;
+        ctx.fillStyle = colors.stripText;
+        ctx.font = '6.5px ui-monospace, monospace';
+        ctx.textAlign = 'center';
+
+        // Several rulers count downwards, so the values have to be placed left
+        // to right rather than in tick order, or the overlap test below never
+        // fires and the numbers run together.
+        const placed = scale.ticks
+            .map(value => ({ value, x: xOf(value) }))
+            .filter(t => isFinite(t.x) && t.x >= g.rowLeft - 0.5 && t.x <= g.rowRight + 0.5)
+            .sort((a, b) => a.x - b.x);
+
+        let lastLabelRight = -Infinity;
+        for (const tick of placed) {
+            ctx.beginPath();
+            ctx.moveTo(tick.x, g.y);
+            ctx.lineTo(tick.x, g.y - 4);
+            ctx.stroke();
+
+            const text = formatScaleValue(tick.value, scale.precision);
+            const halfWidth = ctx.measureText(text).width / 2 + 1.5;
+            if (tick.x - halfWidth < lastLabelRight) continue;
+            ctx.fillText(text, tick.x, g.y - 5.5);
+            lastLabelRight = tick.x + halfWidth;
+        }
+
+        // Diagonal end label, set at 45 deg the way a printed chart sets them
+        ctx.save();
+        ctx.fillStyle = colors.stripTitle;
+        ctx.font = '7px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.textBaseline = 'middle';
+        if (scale.side === 'right' || isFull) {
+            ctx.translate(g.rowRight + 3, g.y);
+            ctx.rotate(-Math.PI / 4);
+            ctx.textAlign = 'left';
+            ctx.fillText(scale.label, 0, 0);
+        } else {
+            ctx.translate(g.rowLeft - 3, g.y);
+            ctx.rotate(-Math.PI / 4);
+            ctx.textAlign = 'right';
+            ctx.fillText(scale.label, 0, 0);
+        }
+        ctx.restore();
+        void rowH;
     }
 
     /**
@@ -1108,8 +1816,28 @@ export class SmithChartClock {
         // 1. Draw Smith Chart Background Grid
         this.drawSmithChartGrid();
 
-        // 2. Draw Historical Date-DNA Spiral
+        // 2. Draw Historical Date-DNA Spiral (decorative, off by default)
         this.drawHistoricalSpiral(now);
+
+        // 2b. The composite phasor drives the day path, the VSWR rings and the
+        //     radially scaled parameter cursor, so compute it once up front.
+        const composite = SmithChartRFMath.compositePolarForTime(now);
+        const compositeGamma = SmithChartRFMath.polarToGamma(composite);
+
+        // 2c. A full day of reflection, traced by the hour and minute arms
+        if (this.options.showDayPath) {
+            this.drawDayPath(now);
+        }
+
+        // 2d. Constant-VSWR circles: radius |Gamma|, centred on the origin
+        if (this.options.showVswrCircles) {
+            this.drawVswrCircles(composite.magnitude);
+        }
+
+        // 2e. The day bar along the real axis. It is drawn before the arms
+        //     because every arm now emanates from its dot.
+        const dayOrigin = this.dayOriginFor(now);
+        this.drawDayAxis(now);
 
         // 3. Compute Hand Phasors
         // Minute Hand: 60 min = 2*PI, offset by -PI/2 to start at top (12 o'clock)
@@ -1149,9 +1877,9 @@ export class SmithChartClock {
             const compX = (minCart.x - this.centerX) + (hrCart.x - this.centerX);
             const compY = (minCart.y - this.centerY) + (hrCart.y - this.centerY);
 
-            const compMagPx = Math.sqrt(compX * compX + compY * compY);
-            const compMagNorm = Math.min(1.0, compMagPx / (this.scaleRadius * 1.55));
-            const compPhase = Math.atan2(compY, compX);
+            const compMagNorm = composite.magnitude;
+            const compPhase = composite.phase;
+            void compX; void compY;
 
             // Draw dashed parallelogram lines
             this.ctx.save();
@@ -1169,44 +1897,76 @@ export class SmithChartClock {
             this.drawPhasorVector(
                 { magnitude: compMagNorm, phase: compPhase },
                 colors.compositeHand,
-                2.0,
+                5.0,
                 'Σ',
-                false
+                false,
+                dayOrigin
             );
         }
 
-        // 5. Render Main Phasor Hands
+        // 5. Render Main Phasor Hands, deliberately overscaled so they stay
+        //    legible on top of a full day of interference-sum history.
+        // Ghosts first: centre-to-rim lines that still read against the dial
+        this.drawGhostHand(hrVector, hrColor);
+        this.drawGhostHand(minVector, minColor);
+        if (this.options.showSecondHand) this.drawGhostHand(secVector, secColor);
+
         // Hour Hand (Low frequency, thick)
-        this.drawPhasorVector(hrVector, hrColor, 4.5, 'H');
+        this.drawPhasorVector(hrVector, hrColor, 9.0, 'H', true, dayOrigin);
 
         // Minute Hand (High frequency, medium)
-        this.drawPhasorVector(minVector, minColor, 3.0, 'M');
+        this.drawPhasorVector(minVector, minColor, 6.0, 'M', true, dayOrigin);
 
         // Second Hand (Sweep needle)
         if (this.options.showSecondHand) {
-            this.drawPhasorVector(secVector, secColor, 1.5, undefined, true);
+            this.drawPhasorVector(secVector, secColor, 2.8, undefined, true, dayOrigin);
 
             // Counterweight on second hand
             const tailAngle = secPhase + Math.PI;
             const tailLen = this.scaleRadius * 0.18;
             this.ctx.save();
             this.ctx.strokeStyle = secColor;
-            this.ctx.lineWidth = 2.5;
+            this.ctx.lineWidth = 4.0;
             this.ctx.beginPath();
-            this.ctx.moveTo(this.centerX, this.centerY);
+            this.ctx.moveTo(dayOrigin.x, dayOrigin.y);
             this.ctx.lineTo(
-                this.centerX + tailLen * Math.cos(tailAngle),
-                this.centerY + tailLen * Math.sin(tailAngle)
+                dayOrigin.x + tailLen * Math.cos(tailAngle),
+                dayOrigin.y + tailLen * Math.sin(tailAngle)
             );
             this.ctx.stroke();
             this.ctx.restore();
         }
 
-        // Center Cap
+        // 6. Calendar wheels: date, month and year, each on its own VSWR circle
+        if (this.options.showCalendarHands) {
+            const calendarColors: Record<string, string> = {
+                date: '#10b981',
+                month: '#f59e0b',
+                year: '#94a3b8'
+            };
+            for (const hand of SmithChartRFMath.handVectorsForTime(now)) {
+                if (hand.id !== 'date' && hand.id !== 'month' && hand.id !== 'year') continue;
+                this.drawGhostHand(hand.polar, calendarColors[hand.id]);
+                this.drawPhasorVector(hand.polar, calendarColors[hand.id], 4.5, hand.label, true, dayOrigin);
+            }
+        }
+
+        // The hub travels with the arms, so it sits on the day dot.
         this.ctx.fillStyle = '#ffffff';
         this.ctx.beginPath();
-        this.ctx.arc(this.centerX, this.centerY, 3.5, 0, 2 * Math.PI);
+        this.ctx.arc(dayOrigin.x, dayOrigin.y, 3.2, 0, 2 * Math.PI);
         this.ctx.fill();
+
+        // 7. Mark where the composite phasor stands on its own locus right now
+        const nowPoint = this.polarToCartesian(composite);
+        this.ctx.strokeStyle = '#ffffff';
+        this.ctx.lineWidth = 1.2;
+        this.ctx.beginPath();
+        this.ctx.arc(nowPoint.x, nowPoint.y, 3.2, 0, 2 * Math.PI);
+        this.ctx.stroke();
+
+        // 8. Radially scaled parameters, cursored at the composite radius
+        this.drawRadialParameterScales(composite.magnitude, compositeGamma.re);
 
         this.animationFrameId = requestAnimationFrame(this.tick);
     };
@@ -1236,26 +1996,156 @@ export class SmithChartClock {
     public getCurrentMetrics(): {
         minute: ImpedanceMetrics;
         hour: ImpedanceMetrics;
+        composite: ImpedanceMetrics;
+        hands: HandVector[];
+        dayPath: DayPathSummary;
         now: Date;
         dna: DateDNA;
         mood: MoodData;
     } {
         const now = this.getEffectiveTime();
-        const minutes = now.getMinutes() + (now.getSeconds() / 60);
-        const hours = (now.getHours() % 12) + (minutes / 60);
+        const z0 = this.options.characteristicImpedance;
+        const hands = SmithChartRFMath.handVectorsForTime(now);
 
-        const minPhase = (minutes / 60.0) * (2 * Math.PI) - (Math.PI / 2);
-        const hrPhase = (hours / 12.0) * (2 * Math.PI) - (Math.PI / 2);
+        const minPolar = hands.find(h => h.id === 'minute')!.polar;
+        const hrPolar = hands.find(h => h.id === 'hour')!.polar;
+        const compositePolar = SmithChartRFMath.compositePolarForTime(now);
 
-        const minPolar: PolarCoordinate = { magnitude: 0.95, phase: minPhase };
-        const hrPolar: PolarCoordinate = { magnitude: 0.60, phase: hrPhase };
+        const minute = SmithChartRFMath.computeMetrics(minPolar, z0, hrPolar);
+        const hour = SmithChartRFMath.computeMetrics(hrPolar, z0, minPolar);
+        const composite = SmithChartRFMath.computeMetrics(compositePolar, z0, hrPolar);
 
-        const minute = SmithChartRFMath.computeMetrics(minPolar, this.options.characteristicImpedance, hrPolar);
-        const hour = SmithChartRFMath.computeMetrics(hrPolar, this.options.characteristicImpedance, minPolar);
-        const dna = SmithChartRFMath.computeDateDNA(now);
-        const mood = SmithChartRFMath.computeMood(now);
+        return {
+            minute,
+            hour,
+            composite,
+            hands,
+            dayPath: this.getDayPath(now),
+            now,
+            dna: SmithChartRFMath.computeDateDNA(now),
+            mood: SmithChartRFMath.computeMood(now)
+        };
+    }
 
-        return { minute, hour, now, dna, mood };
+    /**
+     * Reads every ruler of the radially scaled parameter strip at the current
+     * composite radius, so a panel can print the whole nomograph as numbers.
+     */
+    public readRadialScales(): Array<{ id: string; label: string; formula: string; value: string }> {
+        const composite = SmithChartRFMath.compositePolarForTime(this.getEffectiveTime());
+        const gamma = SmithChartRFMath.polarToGamma(composite);
+        const rho = composite.magnitude;
+
+        return RADIAL_SCALES.map(scale => ({
+            id: scale.id,
+            label: scale.label,
+            formula: scale.formula,
+            value: formatScaleValue(
+                scale.side === 'full' ? 1 + gamma.re : scale.valueOf(rho),
+                scale.precision
+            )
+        }));
+    }
+
+    /**
+     * The chart's own arithmetic, written out with this moment's numbers
+     * substituted in. Intended to be printed straight into a panel so the
+     * reading and the formula that produced it sit side by side.
+     */
+    public getFormulaBreakdown(): Array<{
+        section: string;
+        title: string;
+        symbolic: string;
+        substituted: string;
+        note?: string;
+    }> {
+        const z0 = this.options.characteristicImpedance;
+        const { composite } = this.getCurrentMetrics();
+
+        const f = (v: number, d: number = 3): string => (isFinite(v) ? v.toFixed(d) : '∞');
+        const cx = (c: ComplexNumber, d: number = 3): string => {
+            if (!isFinite(c.re) || !isFinite(c.im)) return '∞';
+            return `${c.re.toFixed(d)} ${c.im >= 0 ? '+' : '−'} j${Math.abs(c.im).toFixed(d)}`;
+        };
+
+        const g = composite.gamma;
+        const z = composite.zNorm;
+        const y = composite.yNorm;
+        const Z = composite.zActual;
+        const rho = composite.gammaMag;
+
+        return [
+            {
+                section: '1. Normalization',
+                title: 'Normalized impedance',
+                symbolic: 'z = Z / Z₀ = r + jx',
+                substituted: `z = (${cx(Z, 1)}) Ω / ${z0} Ω = ${cx(z)}`,
+                note: 'Every radius on the chart is a ratio to the line impedance, never an absolute ohm value.'
+            },
+            {
+                section: '1. Normalization',
+                title: 'Normalized admittance',
+                symbolic: 'y = Y / Y₀ = 1 / z = g + jb',
+                substituted: `y = 1 / (${cx(z)}) = ${cx(y)}`,
+                note: 'y sits diametrically opposite z: same radius, phase rotated by 180°.'
+            },
+            {
+                section: '2. Reflection Coefficient',
+                title: 'Definition',
+                symbolic: 'Γ = (Zₗ − Z₀) / (Zₗ + Z₀) = |Γ| e^{jθ}',
+                substituted: `Γ = ${cx(g)} = ${f(rho)} ∠ ${f(composite.gammaPhaseDeg, 1)}°`,
+                note: 'The composite phasor: the hour and minute arms added, renormalised to the unit circle.'
+            },
+            {
+                section: '2. Reflection Coefficient',
+                title: 'In terms of normalized impedance',
+                symbolic: 'Γ = (z − 1) / (z + 1)',
+                substituted: `Γ = ((${cx(z)}) − 1) / ((${cx(z)}) + 1) = ${cx(g)}`
+            },
+            {
+                section: '2. Reflection Coefficient',
+                title: 'Inverting for normalized impedance',
+                symbolic: 'z = (1 + Γ) / (1 − Γ)',
+                substituted: `z = (1 + ${cx(g)}) / (1 − ${cx(g)}) = ${cx(z)}`
+            },
+            {
+                section: '2. Reflection Coefficient',
+                title: 'Magnitude, from VSWR',
+                symbolic: '|Γ| = (VSWR − 1) / (VSWR + 1)',
+                substituted: `|Γ| = (${f(composite.vswr, 2)} − 1) / (${f(composite.vswr, 2)} + 1) = ${f(rho)}`
+            },
+            {
+                section: '3. Voltage Standing Wave Ratio',
+                title: 'Definition',
+                symbolic: 'VSWR = Vₘₐₓ / Vₘᵢₙ = (1 + |Γ|) / (1 − |Γ|)',
+                substituted: `VSWR = (1 + ${f(rho)}) / (1 − ${f(rho)}) = ${f(composite.vswr, 2)} : 1`
+            },
+            {
+                section: '3. Voltage Standing Wave Ratio',
+                title: 'Graphical use',
+                symbolic: 'circle centred on r = 1, x = 0, radius |Γ|',
+                substituted: `constant-VSWR circle of radius ${f(rho)} about the matched centre`,
+                note: 'Drawn on the chart in red. Each clock arm rides its own constant-VSWR circle.'
+            },
+            {
+                section: '4. Derived losses',
+                title: 'Return loss',
+                symbolic: 'RL = −20·log₁₀|Γ|',
+                substituted: `RL = −20·log₁₀(${f(rho)}) = ${f(composite.returnLossDb, 2)} dB`
+            },
+            {
+                section: '4. Derived losses',
+                title: 'Reflection (mismatch) loss',
+                symbolic: 'ML = −10·log₁₀(1 − |Γ|²)',
+                substituted: `ML = −10·log₁₀(1 − ${f(rho * rho)}) = ${f(composite.mismatchLossDb, 3)} dB`
+            },
+            {
+                section: '4. Derived losses',
+                title: 'Transmission coefficient',
+                symbolic: 'τ = 1 + Γ,   τₚ = 1 − |Γ|²',
+                substituted: `τ = ${f(composite.transmCoeffE)},  τₚ = ${f(composite.transmCoeffP)}`
+            }
+        ];
     }
 
     public destroy(): void {

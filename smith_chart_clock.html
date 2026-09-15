@@ -89,11 +89,11 @@
 
         .main-layout {
             display: grid;
-            grid-template-columns: 1fr 420px;
+            grid-template-columns: minmax(0, 1fr) 360px;
             gap: 20px;
-            padding: 20px;
+            padding: 8px;
             flex: 1;
-            max-width: 1600px;
+            max-width: none;
             margin: 0 auto;
             width: 100%;
         }
@@ -108,21 +108,21 @@
         .stage-container {
             display: flex;
             flex-direction: column;
-            gap: 16px;
+            gap: 8px;
+            min-width: 0;
         }
 
         .canvas-card {
             background: var(--bg-card);
             border: 1px solid var(--bg-card-border);
             border-radius: 12px;
-            padding: 16px;
+            padding: 6px;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             position: relative;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-            min-height: 620px;
         }
 
         canvas {
@@ -134,8 +134,8 @@
 
         .canvas-overlay-stats {
             position: absolute;
-            top: 24px;
-            left: 24px;
+            top: 10px;
+            left: 10px;
             background: rgba(10, 13, 20, 0.75);
             backdrop-filter: blur(8px);
             padding: 10px 14px;
@@ -150,10 +150,8 @@
         }
 
         .canvas-legend {
-            position: absolute;
-            bottom: 24px;
-            left: 24px;
-            right: 24px;
+            margin-top: 12px;
+            width: 100%;
             display: flex;
             justify-content: center;
             gap: 20px;
@@ -170,6 +168,86 @@
             display: flex;
             align-items: center;
             gap: 6px;
+        }
+
+        /* Live formula panel */
+        .formula-section {
+            font-size: 0.72rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--accent-cyan);
+            margin: 14px 0 6px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+            padding-bottom: 4px;
+        }
+        .formula-section:first-child { margin-top: 0; }
+
+        .formula-row {
+            display: grid;
+            grid-template-columns: minmax(0, 190px) minmax(0, 1fr);
+            gap: 10px;
+            align-items: baseline;
+            padding: 5px 0;
+            border-bottom: 1px dashed rgba(255, 255, 255, 0.05);
+        }
+        @media (max-width: 720px) {
+            .formula-row { grid-template-columns: 1fr; gap: 2px; }
+        }
+
+        .formula-symbolic {
+            font-family: var(--font-mono);
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            white-space: nowrap;
+            overflow-x: auto;
+        }
+
+        .formula-substituted {
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: #e2e8f0;
+            word-break: break-word;
+        }
+
+        .formula-title {
+            display: block;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            font-size: 0.68rem;
+            color: #64748b;
+            text-transform: none;
+            letter-spacing: 0;
+        }
+
+        .formula-note {
+            grid-column: 1 / -1;
+            font-size: 0.7rem;
+            color: #64748b;
+            font-style: italic;
+        }
+
+        /* Radially scaled parameter readout */
+        .scale-readout {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 6px;
+        }
+        .scale-cell {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 6px;
+            padding: 6px 8px;
+        }
+        .scale-cell b {
+            display: block;
+            font-size: 0.62rem;
+            color: var(--text-muted);
+            font-weight: 600;
+            letter-spacing: 0.04em;
+        }
+        .scale-cell span {
+            font-family: var(--font-mono);
+            font-size: 0.95rem;
+            color: var(--accent-cyan);
         }
 
         .legend-dot {
@@ -410,7 +488,7 @@
         <!-- Stage / Canvas Area -->
         <div class="stage-container">
             <div class="canvas-card">
-                <canvas id="smithClockCanvas" width="680" height="680"></canvas>
+                <canvas id="smithClockCanvas" width="680" height="880"></canvas>
                 
                 <!-- Probe / Live status overlay -->
                 <div class="canvas-overlay-stats" id="probeOverlay">
@@ -439,10 +517,40 @@
                         <span>Interference Sum (Σ)</span>
                     </div>
                     <div class="legend-item">
-                        <span class="legend-dot" style="background: #e11d48;"></span>
-                        <span>Date-DNA Spiral</span>
+                        <span class="legend-dot" style="background: #10b981;"></span>
+                        <span>Date Wheel (D)</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-dot" style="background: #f59e0b;"></span>
+                        <span>Month Wheel (MO)</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-dot" style="background: #94a3b8;"></span>
+                        <span>Year Wheel (Y)</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-dot" style="background: #22d3ee;"></span>
+                        <span>Interference Sum (&#931;) over 24 h</span>
                     </div>
                 </div>
+            </div>
+
+            <!-- Radially scaled parameters, read at this moment's radius -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">📐 Radially Scaled Parameters</span>
+                    <span class="badge">at |&#915;| of the &#931; phasor</span>
+                </div>
+                <div class="scale-readout" id="scaleReadout"></div>
+            </div>
+
+            <!-- The chart's arithmetic, with this moment's numbers filled in -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">&#402;(x) Formulae, Filled In</span>
+                    <span class="badge" id="formulaZ0Badge">Z&#8320; = 50 &#937;</span>
+                </div>
+                <div id="formulaPanel"></div>
             </div>
         </div>
 
@@ -484,6 +592,37 @@
                     <div class="interference-bar-bg">
                         <div class="interference-bar-fill" id="interferenceBar"></div>
                     </div>
+                </div>
+            </div>
+
+            <!-- A day of normalization and reflection -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">🗓️ Day History</span>
+                    <span class="badge" id="dayHistoryDate">--</span>
+                </div>
+                <div class="metrics-grid">
+                    <div class="metric-box">
+                        <span class="metric-label">Best Match Today</span>
+                        <span class="metric-val" id="valBestMatch" style="color: #10b981;">--</span>
+                    </div>
+                    <div class="metric-box">
+                        <span class="metric-label">Worst Match Today</span>
+                        <span class="metric-val" id="valWorstMatch" style="color: #ef4444;">--</span>
+                    </div>
+                    <div class="metric-box">
+                        <span class="metric-label">&#931; VSWR Now</span>
+                        <span class="metric-val" id="valCompVswr" style="color: #facc15;">--</span>
+                    </div>
+                    <div class="metric-box">
+                        <span class="metric-label">&#931; Return Loss Now</span>
+                        <span class="metric-val" id="valCompRl" style="color: #38bdf8;">--</span>
+                    </div>
+                </div>
+                <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 8px; line-height: 1.5;">
+                    The locus on the chart is one full local day of the hour and minute
+                    arms added together, sampled every two minutes. Solid is elapsed,
+                    faint is still to come.
                 </div>
             </div>
 
@@ -544,6 +683,20 @@
                 </div>
 
                 <div style="margin-top: 4px;">
+                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 6px;">
+                        TIME LAPSE: <span id="lapseStatus" style="color: var(--accent-cyan);">stopped</span>
+                    </div>
+                    <div class="preset-grid">
+                        <button class="preset-btn" onclick="startLapse('day', 30000)">Today in 30 s</button>
+                        <button class="preset-btn" onclick="startLapse('day', 60000)">Today in 1 min</button>
+                        <button class="preset-btn" onclick="startLapse('day', 300000)">Today in 5 min</button>
+                        <button class="preset-btn" onclick="startLapse('week', 30000)">A week in 30 s</button>
+                        <button class="preset-btn" onclick="startLapse('year', 60000)">A year in 1 min</button>
+                        <button class="preset-btn" onclick="stopLapse()">&#9632; Stop lapse</button>
+                    </div>
+                </div>
+
+                <div style="margin-top: 4px;">
                     <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 6px;">HISTORICAL PRESETS:</div>
                     <div class="preset-grid">
                         <button class="preset-btn" onclick="applyPreset('now')">Current Live</button>
@@ -564,8 +717,32 @@
 
                 <div class="control-group">
                     <div class="switch-row">
+                        <span>Interference Sum over Time (24 h)</span>
+                        <input type="checkbox" id="chkDayPath" checked>
+                    </div>
+                    <div class="switch-row">
+                        <span>Admittance Locus (y = 1/z)</span>
+                        <input type="checkbox" id="chkAdmittance">
+                    </div>
+                    <div class="switch-row">
+                        <span>Constant-VSWR Circles</span>
+                        <input type="checkbox" id="chkVswr" checked>
+                    </div>
+                    <div class="switch-row">
+                        <span>Calendar Wheels (Date / Month / Year)</span>
+                        <input type="checkbox" id="chkCalendar" checked>
+                    </div>
+                    <div class="switch-row">
+                        <span>Radially Scaled Parameters</span>
+                        <input type="checkbox" id="chkRadialScales" checked>
+                    </div>
+                    <div class="switch-row">
+                        <span>Rim Scales (&#955; &amp; &#8736;&#915;)</span>
+                        <input type="checkbox" id="chkRimScales" checked>
+                    </div>
+                    <div class="switch-row">
                         <span>Historical Date-DNA Spiral</span>
-                        <input type="checkbox" id="chkSpiral" checked>
+                        <input type="checkbox" id="chkSpiral">
                     </div>
                     <div class="switch-row">
                         <span>Composite Resultant Vector (Σ)</span>
@@ -598,6 +775,48 @@
         // ==========================================
         // 1. RF MATH & SMITH CHART COMPUTATIONS
         // ==========================================
+        // Magnitudes of each wheel. Slower wheels sit closer to the matched centre.
+        const HAND_MAGS = {
+            minute: 0.95,
+            second: 0.85,
+            hour: 0.60,
+            date: 0.45,
+            month: 0.30,
+            year: 0.18
+        };
+
+        /**
+         * The gradations a printed Smith chart actually carries.
+         *
+         * Both the resistance circles and the reactance arcs use the same value
+         * set: coarse near the matched centre, opening out towards the open
+         * circuit, so the rendered spacing stays roughly even across the chart.
+         */
+        const GRID_MAJOR = [
+            0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9,
+            1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 3.0, 4.0, 5.0, 10, 20, 50
+        ];
+
+        const GRID_MINOR = (() => {
+            const out = [];
+            const span = (from, to, step) => {
+                for (let v = from; v < to - 1e-9; v += step) out.push(Math.round(v * 1000) / 1000);
+            };
+            span(0.02, 0.2, 0.02);
+            span(0.2, 1.0, 0.05);
+            span(1.0, 2.0, 0.1);
+            span(2.0, 3.0, 0.2);
+            span(3.0, 5.0, 0.5);
+            span(5.0, 10, 1);
+            span(10, 20, 2);
+            span(20, 50, 10);
+            return out.filter(v => !GRID_MAJOR.includes(v));
+        })();
+
+        // Which circles and arcs carry a printed number
+        const R_LABELLED = [0.1, 0.2, 0.3, 0.4, 0.5, 0.7, 1.0, 1.5, 2.0, 3.0, 5.0, 10, 20];
+        const X_LABELLED = [0.2, 0.4, 0.6, 0.8, 1.0, 1.5, 2.0, 3.0, 5.0, 10];
+
         class SmithMath {
             static polarToCartesian(mag, phase, centerX, centerY, scaleRadius) {
                 return {
@@ -626,6 +845,109 @@
                     R: Math.max(0, r * z0),
                     X: x * z0
                 };
+            }
+
+            // y = Y/Y0 = 1/z = (1 - G)/(1 + G). Same radius as z, phase turned 180 deg.
+            static gammaToAdmittance(gammaRe, gammaIm, z0 = 50) {
+                const denom = (1 + gammaRe) * (1 + gammaRe) + (gammaIm * gammaIm);
+                if (denom < 1e-7) return { g: Infinity, b: Infinity, G: Infinity, B: Infinity };
+                const g = (1 - (gammaRe * gammaRe) - (gammaIm * gammaIm)) / denom;
+                const b = (-2 * gammaIm) / denom;
+                return { g: Math.max(0, g), b, G: Math.max(0, g) / z0, B: b / z0 };
+            }
+
+            static daysInMonth(date) {
+                return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+            }
+
+            static daysInYear(date) {
+                const y = date.getFullYear();
+                return ((y % 4 === 0 && y % 100 !== 0) || y % 400 === 0) ? 366 : 365;
+            }
+
+            static dayOfYear(date) {
+                return (date.getTime() - new Date(date.getFullYear(), 0, 1).getTime()) / 86400000;
+            }
+
+            /**
+             * Every clock wheel as a phasor. Each turns once per its own period
+             * and rides its own constant-VSWR circle: the faster the wheel, the
+             * further out it sits. Twelve o'clock is up, hence the -PI/2 offset.
+             */
+            static handVectors(date) {
+                const seconds = date.getSeconds() + date.getMilliseconds() / 1000;
+                const minutes = date.getMinutes() + seconds / 60;
+                const hours12 = (date.getHours() % 12) + minutes / 60;
+
+                const dim = SmithMath.daysInMonth(date);
+                const dayFrac = (date.getDate() - 1) + (date.getHours() + minutes / 60) / 24;
+                const monthFrac = date.getMonth() + dayFrac / dim;
+                const yearFrac = (date.getFullYear() % 10) + SmithMath.dayOfYear(date) / SmithMath.daysInYear(date);
+
+                const turn = (f, whole) => (f / whole) * (2 * Math.PI) - (Math.PI / 2);
+
+                return {
+                    second: { mag: HAND_MAGS.second, phase: turn(seconds, 60), label: 'S' },
+                    minute: { mag: HAND_MAGS.minute, phase: turn(minutes, 60), label: 'M' },
+                    hour:   { mag: HAND_MAGS.hour,   phase: turn(hours12, 12), label: 'H' },
+                    date:   { mag: HAND_MAGS.date,   phase: turn(dayFrac, dim), label: 'D' },
+                    month:  { mag: HAND_MAGS.month,  phase: turn(monthFrac, 12), label: 'MO' },
+                    year:   { mag: HAND_MAGS.year,   phase: turn(yearFrac, 10), label: 'Y' }
+                };
+            }
+
+            /**
+             * The composite reflection coefficient: hour + minute as vectors,
+             * renormalised so the pair can never leave the unit circle. This is
+             * the point the day path traces and the parameter cursor reads.
+             */
+            static compositePolar(date) {
+                const h = SmithMath.handVectors(date);
+                const re = h.minute.mag * Math.cos(h.minute.phase) + h.hour.mag * Math.cos(h.hour.phase);
+                const im = h.minute.mag * Math.sin(h.minute.phase) + h.hour.mag * Math.sin(h.hour.phase);
+                const norm = HAND_MAGS.minute + HAND_MAGS.hour;
+                return {
+                    mag: Math.min(1.0, Math.sqrt(re * re + im * im) / norm),
+                    phase: Math.atan2(im, re)
+                };
+            }
+
+            /**
+             * A full local day of normalization and reflection, read off the
+             * clock arms: midnight to midnight, Gamma -> z -> y -> VSWR.
+             */
+            static buildDayPath(date, sampleMinutes = 2) {
+                const step = Math.max(1, Math.min(60, Math.round(sampleMinutes)));
+                const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+
+                const samples = [];
+                let best = null, worst = null;
+
+                for (let minuteOfDay = 0; minuteOfDay <= 1440; minuteOfDay += step) {
+                    const m = Math.min(1440, minuteOfDay);
+                    const stamp = new Date(dayStart.getTime() + m * 60000);
+                    const polar = SmithMath.compositePolar(stamp);
+                    const rho = polar.mag;
+                    const gammaRe = rho * Math.cos(polar.phase);
+                    const gammaIm = rho * Math.sin(polar.phase);
+
+                    const sample = {
+                        minuteOfDay: m,
+                        date: stamp,
+                        polar,
+                        gammaRe,
+                        gammaIm,
+                        z: SmithMath.gammaToImpedance(gammaRe, gammaIm, config.z0),
+                        y: SmithMath.gammaToAdmittance(gammaRe, gammaIm, config.z0),
+                        vswr: rho >= 0.9999 ? Infinity : (1 + rho) / (1 - rho),
+                        rl: rho > 1e-5 ? -20 * Math.log10(rho) : Infinity
+                    };
+                    samples.push(sample);
+                    if (!best || rho < best.polar.mag) best = sample;
+                    if (!worst || rho > worst.polar.mag) worst = sample;
+                }
+
+                return { samples, best, worst, dayStart };
             }
 
             static computeDateDNA(date) {
@@ -668,6 +990,103 @@
         }
 
         // ==========================================
+        // 1b. RADIALLY SCALED PARAMETERS
+        // ==========================================
+        // Every ruler on the strip beneath the chart is plotted against the same
+        // radius rho = |Gamma|: rho = 1 at the rim, rho = 0 at the matched centre.
+        // A ruler is therefore fully described by the pair of functions that
+        // convert between its printed value and that radius.
+        const INF = Infinity;
+        const rhoFromSwr = swr => (swr === INF ? 1 : (swr - 1) / (swr + 1));
+        const swrFromRho = rho => (rho >= 0.9999 ? INF : (1 + rho) / (1 - rho));
+
+        const RADIAL_SCALES = [
+            {
+                id: 'swr', row: 0, side: 'left', label: 'SWR', precision: 2,
+                formula: 'SWR = (1 + |Γ|) / (1 − |Γ|)',
+                rhoOf: rhoFromSwr, valueOf: swrFromRho,
+                ticks: [INF, 100, 40, 20, 10, 5, 4, 3, 2.5, 2, 1.8, 1.6, 1.4, 1.2, 1.1, 1]
+            },
+            {
+                id: 'dbs', row: 1, side: 'left', label: 'dBS', precision: 2,
+                formula: 'dBS = 20·log₁₀(SWR)',
+                rhoOf: d => (d === INF ? 1 : rhoFromSwr(Math.pow(10, d / 20))),
+                valueOf: rho => (rho >= 0.9999 ? INF : 20 * Math.log10(swrFromRho(rho))),
+                ticks: [INF, 40, 30, 20, 15, 10, 8, 6, 5, 4, 3, 2, 1, 0]
+            },
+            {
+                id: 'rtnLoss', row: 2, side: 'left', label: 'RTN. LOSS [dB]', precision: 2,
+                formula: 'RL = −20·log₁₀|Γ|',
+                rhoOf: l => (l === INF ? 0 : Math.pow(10, -l / 20)),
+                valueOf: rho => (rho > 1e-5 ? -20 * Math.log10(rho) : INF),
+                ticks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 20, 30, INF]
+            },
+            {
+                id: 'rflCoeffE', row: 3, side: 'left', label: 'RFL. COEFF. E or I', precision: 3,
+                formula: '|Γ| = (SWR − 1)/(SWR + 1)',
+                rhoOf: v => v, valueOf: rho => rho,
+                ticks: [1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05, 0.01, 0]
+            },
+            {
+                id: 'rflCoeffP', row: 4, side: 'left', label: 'RFL. COEFF. P', precision: 3,
+                formula: '|Γ|² = reflected / incident power',
+                rhoOf: v => Math.sqrt(Math.max(0, v)), valueOf: rho => rho * rho,
+                ticks: [1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0]
+            },
+
+            {
+                id: 'atten', row: 0, side: 'right', label: 'ATTEN. [dB]', precision: 2,
+                formula: 'A = −10·log₁₀|Γ|  (1 dB steps of line loss)',
+                rhoOf: a => (a === INF ? 0 : Math.pow(10, -a / 10)),
+                valueOf: rho => (rho > 1e-5 ? -10 * Math.log10(rho) : INF),
+                ticks: [1, 2, 3, 4, 5, 7, 10, 15]
+            },
+            {
+                id: 'swLossCoeff', row: 1, side: 'right', label: 'S.W. LOSS COEFF', precision: 3,
+                formula: '(1 + |Γ|²) / (1 − |Γ|²)',
+                rhoOf: c => (c === INF ? 1 : Math.sqrt(Math.max(0, (c - 1) / (c + 1)))),
+                valueOf: rho => (rho >= 0.9999 ? INF : (1 + rho * rho) / (1 - rho * rho)),
+                ticks: [1, 1.1, 1.2, 1.3, 1.4, 1.6, 1.8, 2, 3, 4, 5, 10, 20, INF]
+            },
+            {
+                id: 'rflLoss', row: 2, side: 'right', label: 'RFL. LOSS [dB]', precision: 3,
+                formula: 'ML = −10·log₁₀(1 − |Γ|²)',
+                rhoOf: l => (l === INF ? 1 : Math.sqrt(Math.max(0, 1 - Math.pow(10, -l / 10)))),
+                valueOf: rho => (rho >= 0.9999 ? INF : -10 * Math.log10(1 - rho * rho)),
+                ticks: [0, 0.1, 0.2, 0.4, 0.6, 0.8, 1, 1.5, 2, 3, 4, 5, 6, 10, 15, INF]
+            },
+            {
+                id: 'swPeak', row: 3, side: 'right', label: 'S.W. PEAK (CONST. P)', precision: 3,
+                formula: '√((1 + |Γ|) / (1 − |Γ|))',
+                rhoOf: pk => (pk === INF ? 1 : (pk * pk - 1) / (pk * pk + 1)),
+                valueOf: rho => (rho >= 0.9999 ? INF : Math.sqrt((1 + rho) / (1 - rho))),
+                ticks: [1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2, 2.5, 3, 4, 5, 10, INF]
+            },
+            {
+                id: 'transmP', row: 4, side: 'right', label: 'TRANSM. COEFF. P', precision: 3,
+                formula: '1 − |Γ|² = transmitted / incident power',
+                rhoOf: t => Math.sqrt(Math.max(0, 1 - t)), valueOf: rho => 1 - rho * rho,
+                ticks: [1, 0.99, 0.95, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0]
+            },
+
+            {
+                // Linear in Gamma itself, not in |Gamma|, so this ruler spans the
+                // whole width: 0 at the ORIGIN, 1 at CENTER, 2 at the open circuit.
+                id: 'transmE', row: 5, side: 'full', label: 'TRANSM. COEFF. E or I', precision: 3,
+                formula: 'τ = 1 + Γ   (0 at the short, 2 at the open)',
+                rhoOf: v => Math.abs(v - 1), valueOf: rho => 1 + rho,
+                ticks: [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1,
+                        1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2]
+            }
+        ];
+
+        function formatScaleValue(v, precision = 2) {
+            if (!isFinite(v)) return '∞';
+            if (Number.isInteger(v)) return v.toString();
+            return parseFloat(v.toFixed(precision)).toString();
+        }
+
+        // ==========================================
         // 2. SMITH CHART CLOCK APPLICATION STATE
         // ==========================================
         const canvas = document.getElementById('smithClockCanvas');
@@ -682,15 +1101,36 @@
         // Configuration
         const config = {
             z0: 50,
-            showSpiral: true,
+            // The Date-DNA spiral is decorative, not an RF reading, and it buries
+            // the day path. It stays available, but it is off by default.
+            showSpiral: false,
             showComposite: true,
             showSecond: true,
             showReactance: true,
             showResistance: true,
+            showDayPath: true,
+            showAdmittance: false,
+            showVswrCircles: true,
+            showCalendar: true,
+            showRadialScales: true,
+            showRimScales: true,
+            dayPathSampleMinutes: 2,
             colorEngine: 'rf-phasor', // 'date-dna' | 'mood' | 'rf-phasor'
             spiralStartYear: 1900,
             spiralEndYear: 2050
         };
+
+        // The day path is the same for every frame of a given day, so cache it.
+        let dayPathCache = null;
+        let dayPathCacheKey = '';
+        function getDayPath(date) {
+            const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}-${config.dayPathSampleMinutes}-${config.z0}`;
+            if (!dayPathCache || dayPathCacheKey !== key) {
+                dayPathCache = SmithMath.buildDayPath(date, config.dayPathSampleMinutes);
+                dayPathCacheKey = key;
+            }
+            return dayPathCache;
+        }
 
         // DOM Elements
         const liveDateStr = document.getElementById('liveDateStr');
@@ -732,6 +1172,15 @@
         document.getElementById('chkSecond').addEventListener('change', e => config.showSecond = e.target.checked);
         document.getElementById('chkReactance').addEventListener('change', e => config.showReactance = e.target.checked);
         document.getElementById('chkResistance').addEventListener('change', e => config.showResistance = e.target.checked);
+        document.getElementById('chkDayPath').addEventListener('change', e => config.showDayPath = e.target.checked);
+        document.getElementById('chkAdmittance').addEventListener('change', e => config.showAdmittance = e.target.checked);
+        document.getElementById('chkVswr').addEventListener('change', e => config.showVswrCircles = e.target.checked);
+        document.getElementById('chkCalendar').addEventListener('change', e => config.showCalendar = e.target.checked);
+        document.getElementById('chkRimScales').addEventListener('change', e => config.showRimScales = e.target.checked);
+        document.getElementById('chkRadialScales').addEventListener('change', e => {
+            config.showRadialScales = e.target.checked;
+            resizeCanvas();
+        });
         colorEngineSelect.addEventListener('change', e => config.colorEngine = e.target.value);
 
         // Resize Canvas with DevicePixelRatio
@@ -739,23 +1188,42 @@
         let centerX = 340;
         let centerY = 340;
         let scaleRadius = 290;
+        let stripTop = 680;
+        let stripHeight = 0;
+        let cssWidth = 680;
+        let cssHeight = 880;
 
         function resizeCanvas() {
             dpr = window.devicePixelRatio || 1;
-            const size = Math.min(680, window.innerWidth - 480);
-            const actualSize = Math.max(320, size);
-            
-            canvas.style.width = actualSize + 'px';
-            canvas.style.height = actualSize + 'px';
-            canvas.width = actualSize * dpr;
-            canvas.height = actualSize * dpr;
+
+            // Take whatever width the stage column actually offers, rather than
+            // holding the chart down to a fixed size.
+            const card = canvas.parentElement;
+            const available = card ? card.clientWidth - 12 : window.innerWidth - 400;
+            const width = Math.max(320, Math.floor(available));
+
+            // Reserve a band at the foot of the canvas for the parameter strip,
+            // then centre the chart in whatever is left above it.
+            stripHeight = config.showRadialScales
+                ? Math.max(120, Math.min(210, width * 0.28))
+                : 0;
+            const height = width + stripHeight;
+            stripTop = height - stripHeight;
+
+            cssWidth = width;
+            cssHeight = height;
+
+            canvas.style.width = width + 'px';
+            canvas.style.height = height + 'px';
+            canvas.width = width * dpr;
+            canvas.height = height * dpr;
 
             ctx.resetTransform?.();
             ctx.scale(dpr, dpr);
 
-            centerX = actualSize / 2;
-            centerY = actualSize / 2;
-            scaleRadius = (actualSize / 2) - 34;
+            centerX = width / 2;
+            centerY = width / 2;
+            scaleRadius = (width / 2) - 34;
         }
 
         window.addEventListener('resize', resizeCanvas);
@@ -799,6 +1267,7 @@
 
         // Live Toggle & Slider bindings
         btnToggleLive.addEventListener('click', () => {
+            stopLapse(); // going back to live, or to manual, ends any playback
             isLive = !isLive;
             if (isLive) {
                 btnToggleLive.classList.add('active');
@@ -925,28 +1394,27 @@
             ctx.lineTo(centerX + R, centerY);
             ctx.stroke();
 
-            // Constant Resistance Circles (r)
+            // Constant Resistance Circles (r), minor gradations first
             if (config.showResistance) {
-                const resistances = [0.2, 0.5, 1.0, 2.0, 5.0];
-                resistances.forEach(r => {
-                    const circleRadius = R / (1 + r);
-                    const circleCenterX = centerX + (r / (1 + r)) * R;
-
-                    ctx.strokeStyle = (r === 1.0) ? '#475569' : '#1e293b';
-                    ctx.lineWidth = (r === 1.0) ? 1.4 : 0.9;
+                const drawR = (r, stroke, lw) => {
+                    ctx.strokeStyle = stroke;
+                    ctx.lineWidth = lw;
                     ctx.beginPath();
-                    ctx.arc(circleCenterX, centerY, circleRadius, 0, 2 * Math.PI);
+                    ctx.arc(centerX + (r / (1 + r)) * R, centerY, R / (1 + r), 0, 2 * Math.PI);
                     ctx.stroke();
+                };
 
-                    // Label on horizontal axis
-                    ctx.fillStyle = '#64748b';
-                    ctx.font = '9px ui-monospace, monospace';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'bottom';
+                GRID_MINOR.forEach(r => drawR(r, '#172033', 0.4));
+                GRID_MAJOR.forEach(r => drawR(r, r === 1.0 ? '#5b6b85' : '#26344a', r === 1.0 ? 1.3 : 0.75));
+
+                // Printed values, sitting on the real axis
+                ctx.fillStyle = '#64748b';
+                ctx.font = '7px ui-monospace, monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'bottom';
+                R_LABELLED.forEach(r => {
                     const lx = centerX + ((r - 1) / (r + 1)) * R;
-                    if (Math.abs(lx - centerX) > 8 && lx < centerX + R - 15) {
-                        ctx.fillText(`r=${r}`, lx, centerY - 2);
-                    }
+                    if (lx < centerX + R - 12) ctx.fillText(r.toString(), lx, centerY - 3);
                 });
             }
 
@@ -957,25 +1425,44 @@
                 ctx.arc(centerX, centerY, R, 0, 2 * Math.PI);
                 ctx.clip();
 
-                const reactances = [0.2, 0.5, 1.0, 2.0, 5.0];
-                reactances.forEach(x => {
-                    [x, -x].forEach(val => {
-                        const arcRadius = (1 / Math.abs(val)) * R;
-                        const arcCenterY = centerY - (1 / val) * R;
-                        const arcCenterX = centerX + R;
+                const drawX = (val, stroke, lw) => {
+                    ctx.strokeStyle = stroke;
+                    ctx.lineWidth = lw;
+                    ctx.beginPath();
+                    ctx.arc(centerX + R, centerY - (1 / val) * R, (1 / Math.abs(val)) * R, 0, 2 * Math.PI);
+                    ctx.stroke();
+                };
 
-                        ctx.strokeStyle = (Math.abs(val) === 1.0) ? '#334155' : '#172554';
-                        ctx.lineWidth = (Math.abs(val) === 1.0) ? 1.2 : 0.8;
-                        ctx.setLineDash([3, 3]);
-
-                        ctx.beginPath();
-                        ctx.arc(arcCenterX, arcCenterY, arcRadius, 0, 2 * Math.PI);
-                        ctx.stroke();
-                    });
+                GRID_MINOR.forEach(x => { drawX(x, '#152238', 0.4); drawX(-x, '#152238', 0.4); });
+                GRID_MAJOR.forEach(x => {
+                    const stroke = x === 1.0 ? '#4a5b78' : '#22304a';
+                    const lw = x === 1.0 ? 1.2 : 0.7;
+                    drawX(x, stroke, lw);
+                    drawX(-x, stroke, lw);
                 });
 
-                ctx.setLineDash([]);
                 ctx.restore();
+
+                // Printed values, where each arc meets the rim. z = jx puts that
+                // meeting point at Gamma = (jx - 1)/(jx + 1), always on |Gamma| = 1.
+                ctx.fillStyle = '#64748b';
+                ctx.font = '7px ui-monospace, monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                X_LABELLED.forEach(x => {
+                    [x, -x].forEach(val => {
+                        const denom = 1 + val * val;
+                        const gRe = (val * val - 1) / denom;
+                        const gIm = (2 * val) / denom;
+                        const angle = Math.atan2(gIm, gRe);
+                        const rr = R - 30;
+                        ctx.fillText(
+                            (val > 0 ? '+j' : '-j') + Math.abs(val),
+                            centerX + rr * Math.cos(angle),
+                            centerY - rr * Math.sin(angle)
+                        );
+                    });
+                });
             }
 
             // Prime Center Dot (Matched Load: Z = 50 + j0, Gamma = 0)
@@ -983,6 +1470,8 @@
             ctx.beginPath();
             ctx.arc(centerX, centerY, 4, 0, 2 * Math.PI);
             ctx.fill();
+
+            if (config.showRimScales) drawChartRimScales(R);
 
             // Clock Dial Numbers (1 to 12) & Angle Calibration
             ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
@@ -1006,6 +1495,107 @@
                 const num = i === 0 ? 12 : i;
                 ctx.fillText(num.toString(), centerX + rText * Math.cos(angle), centerY + rText * Math.sin(angle));
             }
+        }
+
+        /**
+         * The three calibrated rings a printed Smith chart carries around its rim.
+         *
+         * Outermost is wavelengths toward the generator, which advance clockwise
+         * from the short circuit at the left; inside it the same scale running
+         * the other way, toward the load; innermost the angle of the reflection
+         * coefficient in degrees. One full turn of the chart is half a wavelength,
+         * which is why both wavelength rings close at 0.5.
+         *
+         * The grid puts +jx in the upper half, so every angle here is drawn with
+         * the imaginary axis flipped: (cos, -sin).
+         */
+        function drawChartRimScales(R) {
+            const at = (angle, radius) => ({
+                x: centerX + radius * Math.cos(angle),
+                y: centerY - radius * Math.sin(angle)
+            });
+
+            const rings = [
+                { outer: R,      inner: R - 9,  label: 'WAVELENGTHS TOWARD GENERATOR' },
+                { outer: R - 9,  inner: R - 18, label: 'WAVELENGTHS TOWARD LOAD' },
+                { outer: R - 18, inner: R - 27, label: 'ANGLE OF REFLECTION COEFFICIENT' }
+            ];
+
+            ctx.save();
+
+            // Ring separators
+            ctx.strokeStyle = 'rgba(56, 189, 248, 0.25)';
+            ctx.lineWidth = 0.6;
+            rings.forEach(ring => {
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, ring.inner, 0, 2 * Math.PI);
+                ctx.stroke();
+            });
+
+            ctx.font = '6px ui-monospace, monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            // Two wavelength rings: 0 at the short circuit, half a wavelength per turn
+            [
+                { ring: rings[0], sign: +1, color: 'rgba(56, 189, 248, 0.75)' },
+                { ring: rings[1], sign: -1, color: 'rgba(148, 163, 184, 0.7)' }
+            ].forEach(({ ring, sign, color }) => {
+                ctx.strokeStyle = color;
+                ctx.fillStyle = color;
+                for (let step = 0; step < 250; step++) {
+                    const wl = step * 0.002;
+                    const angle = Math.PI + sign * (wl / 0.5) * 2 * Math.PI;
+                    const major = Math.abs(wl * 100 - Math.round(wl * 100)) < 1e-6 && Math.round(wl * 1000) % 10 === 0;
+                    const mid = Math.round(wl * 1000) % 10 === 0;
+                    const depth = major ? 6 : (mid ? 4 : 2);
+
+                    const a = at(angle, ring.outer);
+                    const b = at(angle, ring.outer - depth);
+                    ctx.lineWidth = major ? 0.8 : 0.4;
+                    ctx.beginPath();
+                    ctx.moveTo(a.x, a.y);
+                    ctx.lineTo(b.x, b.y);
+                    ctx.stroke();
+
+                    if (Math.round(wl * 1000) % 50 === 0) {
+                        const t = at(angle, ring.outer - 4.5);
+                        ctx.save();
+                        ctx.translate(t.x, t.y);
+                        ctx.rotate(-angle + Math.PI / 2);
+                        ctx.fillText(wl.toFixed(2).slice(1), 0, 0);
+                        ctx.restore();
+                    }
+                }
+            });
+
+            // Angle of the reflection coefficient, +180 back round to -180
+            const ring = rings[2];
+            ctx.strokeStyle = 'rgba(244, 63, 94, 0.6)';
+            ctx.fillStyle = 'rgba(244, 63, 94, 0.8)';
+            for (let deg = -180; deg < 180; deg += 2) {
+                const angle = (deg * Math.PI) / 180;
+                const major = deg % 10 === 0;
+                const depth = major ? 6 : 2.5;
+                const a = at(angle, ring.outer);
+                const b = at(angle, ring.outer - depth);
+                ctx.lineWidth = major ? 0.7 : 0.35;
+                ctx.beginPath();
+                ctx.moveTo(a.x, a.y);
+                ctx.lineTo(b.x, b.y);
+                ctx.stroke();
+
+                if (deg % 30 === 0) {
+                    const t = at(angle, ring.outer - 4.5);
+                    ctx.save();
+                    ctx.translate(t.x, t.y);
+                    ctx.rotate(-angle + Math.PI / 2);
+                    ctx.fillText(deg.toString(), 0, 0);
+                    ctx.restore();
+                }
+            }
+
+            ctx.restore();
         }
 
         function drawDateDNASpiral(currentDate) {
@@ -1082,8 +1672,24 @@
             ctx.restore();
         }
 
-        function drawPhasorVector(mag, phase, color, lineWidth, label) {
-            const target = SmithMath.polarToCartesian(mag, phase, centerX, centerY, scaleRadius);
+        function drawPhasorVector(mag, phase, color, lineWidth, label, origin) {
+            // The arms no longer grow out of the chart centre: they emanate from
+            // the hour of day, the dot riding the real axis.
+            const o = origin || { x: centerX, y: centerY };
+
+            // Where that ray leaves the unit circle, so no arm overshoots the
+            // chart once its origin has slid away from the middle.
+            const ox = o.x - centerX;
+            const oy = o.y - centerY;
+            const dx = Math.cos(phase);
+            const dy = Math.sin(phase);
+            const proj = ox * dx + oy * dy;
+            const limit = -proj + Math.sqrt(
+                Math.max(0, proj * proj + scaleRadius * scaleRadius - (ox * ox + oy * oy))
+            );
+            const length = Math.min(mag * scaleRadius, limit * 0.97);
+
+            const target = { x: o.x + length * dx, y: o.y + length * dy };
 
             ctx.save();
             ctx.shadowColor = color;
@@ -1094,7 +1700,7 @@
 
             // Shaft
             ctx.beginPath();
-            ctx.moveTo(centerX, centerY);
+            ctx.moveTo(o.x, o.y);
             ctx.lineTo(target.x, target.y);
             ctx.stroke();
 
@@ -1112,8 +1718,8 @@
             if (label) {
                 ctx.shadowBlur = 0;
                 ctx.fillStyle = color;
-                ctx.font = 'bold 11px ui-monospace, monospace';
-                const dist = 14;
+                ctx.font = 'bold 14px ui-monospace, monospace';
+                const dist = Math.max(16, lineWidth * 2.6);
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.fillText(label, target.x + dist * Math.cos(phase), target.y + dist * Math.sin(phase));
@@ -1123,9 +1729,524 @@
             return target;
         }
 
+        /**
+         * Constant-VSWR circles: centred on the origin, radius |Gamma|.
+         * Each clock wheel rides one, so the dial rings and the RF reading are
+         * literally the same curve. Only the composite circle moves.
+         */
+        function drawVswrCircles(compositeRho) {
+            const rings = [
+                { rho: HAND_MAGS.minute, strong: false, note: 'M' },
+                { rho: HAND_MAGS.hour, strong: false, note: 'H' }
+            ];
+            if (config.showCalendar) {
+                rings.push(
+                    { rho: HAND_MAGS.date, strong: false, note: 'D' },
+                    { rho: HAND_MAGS.month, strong: false, note: 'MO' },
+                    { rho: HAND_MAGS.year, strong: false, note: 'Y' }
+                );
+            }
+            rings.push({ rho: compositeRho, strong: true, note: 'Σ' });
+
+            ctx.save();
+            for (const ring of rings) {
+                if (ring.rho <= 0.005) continue;
+                ctx.strokeStyle = ring.strong ? '#f43f5e' : 'rgba(244, 63, 94, 0.3)';
+                ctx.lineWidth = ring.strong ? 1.6 : 0.9;
+                ctx.setLineDash(ring.strong ? [] : [2, 4]);
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, ring.rho * scaleRadius, 0, 2 * Math.PI);
+                ctx.stroke();
+
+                // Label each circle at its own angle, so the readings do not
+                // pile up along a single diagonal.
+                const swr = ring.rho >= 0.9999 ? '∞' : ((1 + ring.rho) / (1 - ring.rho)).toFixed(2);
+                const a = -2.356 + rings.indexOf(ring) * 0.34;
+                ctx.setLineDash([]);
+                ctx.fillStyle = ring.strong ? '#f43f5e' : '#64748b';
+                ctx.font = ring.strong ? 'bold 9px ui-monospace, monospace' : '8px ui-monospace, monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(
+                    `${ring.note} ${swr}:1`,
+                    centerX + ring.rho * scaleRadius * Math.cos(a),
+                    centerY + ring.rho * scaleRadius * Math.sin(a)
+                );
+            }
+            ctx.restore();
+        }
+
+        /**
+         * The path of the day: 24 hours of reflection coefficient traced out by
+         * the hour and minute arms, coloured by time of day. Elapsed is solid,
+         * the rest of the day is a faint preview.
+         */
+        function drawDayPath(now) {
+            const path = getDayPath(now);
+            const nowMinutes = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
+            const pt = polar => SmithMath.polarToCartesian(polar.mag, polar.phase, centerX, centerY, scaleRadius);
+
+            ctx.save();
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            // The admittance locus is the same day reflected through the origin,
+            // because y = 1/z sits diametrically opposite z on the chart.
+            if (config.showAdmittance) {
+                ctx.strokeStyle = 'rgba(168, 85, 247, 0.45)';
+                ctx.lineWidth = 1.0;
+                ctx.setLineDash([3, 3]);
+                ctx.beginPath();
+                path.samples.forEach((sample, i) => {
+                    const p = pt({ mag: sample.polar.mag, phase: sample.polar.phase + Math.PI });
+                    if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+                });
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+
+            // A whole day of the interference sum is twenty-odd loops, so it is
+            // drawn as a history rather than a solid curve: the day so far sits
+            // far back, and only the last few hours come forward as a bright trail.
+            const TRAIL_MINUTES = 180;
+            let prev = pt(path.samples[0].polar);
+            for (let i = 1; i < path.samples.length; i++) {
+                const sample = path.samples[i];
+                const p = pt(sample.polar);
+                const age = nowMinutes - sample.minuteOfDay;
+                const hue = 190 + (sample.minuteOfDay / 1440) * 150; // dawn cyan -> dusk magenta
+
+                if (age < 0) {
+                    ctx.strokeStyle = 'rgba(34, 211, 238, 0.09)';
+                    ctx.lineWidth = 0.6;
+                } else if (age <= TRAIL_MINUTES) {
+                    const freshness = 1 - age / TRAIL_MINUTES;
+                    ctx.strokeStyle = `hsla(${hue.toFixed(0)}, 90%, 62%, ${(0.2 + 0.7 * freshness).toFixed(3)})`;
+                    ctx.lineWidth = 0.8 + 1.2 * freshness;
+                } else {
+                    ctx.strokeStyle = `hsla(${hue.toFixed(0)}, 70%, 58%, 0.32)`;
+                    ctx.lineWidth = 0.9;
+                }
+
+                ctx.beginPath();
+                ctx.moveTo(prev.x, prev.y);
+                ctx.lineTo(p.x, p.y);
+                ctx.stroke();
+                prev = p;
+            }
+
+            // Hour stations around the locus
+            ctx.font = '8px ui-monospace, monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            for (const sample of path.samples) {
+                if (sample.minuteOfDay % 60 !== 0 || sample.minuteOfDay === 1440) continue;
+                const p = pt(sample.polar);
+                const elapsed = sample.minuteOfDay <= nowMinutes;
+                ctx.fillStyle = elapsed ? 'rgba(34, 211, 238, 0.55)' : 'rgba(34, 211, 238, 0.14)';
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, sample.minuteOfDay % 360 === 0 ? 2.4 : 1.2, 0, 2 * Math.PI);
+                ctx.fill();
+            }
+
+            // Best and worst match of the day
+            [{ s: path.best, c: '#10b981' }, { s: path.worst, c: '#ef4444' }].forEach(mark => {
+                const p = pt(mark.s.polar);
+                ctx.strokeStyle = mark.c;
+                ctx.lineWidth = 1.4;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 4.5, 0, 2 * Math.PI);
+                ctx.stroke();
+            });
+
+            ctx.restore();
+        }
+
+        // ---------------------------------------------- radially scaled strip
+
+        function stripX(scale, rho, rowLeft, rowRight) {
+            const clamped = Math.max(0, Math.min(1, rho));
+            if (scale.side === 'left') return centerX - clamped * (centerX - rowLeft);
+            if (scale.side === 'right') return centerX + clamped * (rowRight - centerX);
+            return rowLeft + ((1 + clamped) / 2) * (rowRight - rowLeft);
+        }
+
+        /** One ruler: minor ticks, printed values, diagonal end label. */
+        function drawRadialRuler(scale, g) {
+            const isFull = scale.side === 'full';
+            const xOf = value => isFull
+                ? g.rowLeft + (value / 2) * (g.rowRight - g.rowLeft)
+                : stripX(scale, scale.rhoOf(value), g.rowLeft, g.rowRight);
+
+            // Minor ticks, interpolated in value space between the printed majors
+            ctx.strokeStyle = '#55657f';
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            for (let i = 0; i < scale.ticks.length - 1; i++) {
+                const a = scale.ticks[i], b = scale.ticks[i + 1];
+                if (!isFinite(a) || !isFinite(b)) continue;
+                for (let k = 1; k < 5; k++) {
+                    const x = xOf(a + ((b - a) * k) / 5);
+                    if (x < g.rowLeft - 0.5 || x > g.rowRight + 0.5) continue;
+                    ctx.moveTo(x, g.y);
+                    ctx.lineTo(x, g.y - 2.5);
+                }
+            }
+            ctx.stroke();
+
+            // Major ticks and printed values, skipping any that would collide
+            ctx.strokeStyle = '#3f4c63';
+            ctx.lineWidth = 0.9;
+            ctx.fillStyle = '#9fb0c7';
+            ctx.font = '6.5px ui-monospace, monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'alphabetic';
+
+            // Several rulers count downwards, so the values have to be placed
+            // left to right rather than in tick order, or the overlap test in
+            // the loop below never fires and the numbers run together.
+            const placed = scale.ticks
+                .map(value => ({ value, x: xOf(value) }))
+                .filter(t => isFinite(t.x) && t.x >= g.rowLeft - 0.5 && t.x <= g.rowRight + 0.5)
+                .sort((a, b) => a.x - b.x);
+
+            let lastLabelRight = -Infinity;
+            for (const tick of placed) {
+                ctx.beginPath();
+                ctx.moveTo(tick.x, g.y);
+                ctx.lineTo(tick.x, g.y - 4);
+                ctx.stroke();
+
+                const text = formatScaleValue(tick.value, scale.precision);
+                const half = ctx.measureText(text).width / 2 + 1.5;
+                if (tick.x - half < lastLabelRight) continue;
+                ctx.fillText(text, tick.x, g.y - 5.5);
+                lastLabelRight = tick.x + half;
+            }
+
+            // Diagonal end label, set at 45 deg the way a printed chart sets them
+            ctx.save();
+            ctx.fillStyle = '#cbd5e1';
+            ctx.font = '7px -apple-system, BlinkMacSystemFont, sans-serif';
+            ctx.textBaseline = 'middle';
+            if (scale.side === 'right' || isFull) {
+                ctx.translate(g.rowRight + 3, g.y);
+                ctx.rotate(-Math.PI / 4);
+                ctx.textAlign = 'left';
+            } else {
+                ctx.translate(g.rowLeft - 3, g.y);
+                ctx.rotate(-Math.PI / 4);
+                ctx.textAlign = 'right';
+            }
+            ctx.fillText(scale.label, 0, 0);
+            ctx.restore();
+        }
+
+        /**
+         * The classic "RADIALLY SCALED PARAMETERS" nomograph, with a live cursor
+         * at the composite phasor's radius. Because every ruler is scaled against
+         * the same |Gamma|, one vertical line reads SWR, return loss, reflection
+         * and transmission coefficients for this moment all at once.
+         */
+        function drawRadialScales(cursorRho, cursorGammaRe) {
+            if (!config.showRadialScales || stripHeight < 60) return;
+
+            // The diagonal end labels lean out past the rulers, so the strip
+            // needs real gutters or they run off the canvas.
+            const padX = 72;
+            const left = padX;
+            const right = cssWidth - padX;
+
+            const titleY = stripTop + 11;
+            const dirY = stripTop + 24;
+            const rowsTop = stripTop + 30;
+            // 14px of tail so the bottom ruler's ORIGIN mark and its labels
+            // stay inside the canvas.
+            const rowH = (stripHeight - 36 - 14) / 6;
+            const slant = 4; // gentle trapezoid, exactly as on a printed chart
+
+            ctx.save();
+            ctx.textBaseline = 'alphabetic';
+
+            ctx.fillStyle = '#cbd5e1';
+            ctx.font = '9px -apple-system, BlinkMacSystemFont, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('RADIALLY SCALED PARAMETERS', centerX, titleY);
+
+            ctx.fillStyle = '#55657f';
+            ctx.font = '8px -apple-system, BlinkMacSystemFont, sans-serif';
+            ctx.fillText('TOWARD LOAD →', left + (centerX - left) / 2, dirY);
+            ctx.fillText('← TOWARD GENERATOR', centerX + (right - centerX) / 2, dirY);
+
+            const rowGeometry = row => {
+                const inset = row >= 5 ? 0 : (4 - row) * slant;
+                return {
+                    y: rowsTop + (row + 1) * rowH,
+                    rowLeft: left + inset,
+                    rowRight: right - inset
+                };
+            };
+
+            // Rule line per row, plus the vertical end caps of the trapezoid
+            ctx.strokeStyle = '#3f4c63';
+            ctx.lineWidth = 0.8;
+            for (let row = 0; row < 6; row++) {
+                const g = rowGeometry(row);
+                ctx.beginPath();
+                ctx.moveTo(g.rowLeft, g.y);
+                ctx.lineTo(g.rowRight, g.y);
+                ctx.stroke();
+            }
+            const gTop = rowGeometry(0), gBot = rowGeometry(4);
+            ctx.beginPath();
+            ctx.moveTo(gTop.rowLeft, gTop.y - rowH);
+            ctx.lineTo(gBot.rowLeft, gBot.y);
+            ctx.moveTo(gTop.rowRight, gTop.y - rowH);
+            ctx.lineTo(gBot.rowRight, gBot.y);
+            ctx.stroke();
+
+            RADIAL_SCALES.forEach(scale => drawRadialRuler(scale, rowGeometry(scale.row)));
+
+            // CENTER and ORIGIN reference marks
+            const bar = rowGeometry(5);
+            const triangle = (x, y, label) => {
+                ctx.fillStyle = '#cbd5e1';
+                ctx.beginPath();
+                ctx.moveTo(x, y - 4);
+                ctx.lineTo(x - 3.5, y + 1);
+                ctx.lineTo(x + 3.5, y + 1);
+                ctx.closePath();
+                ctx.fill();
+                ctx.font = '7px -apple-system, BlinkMacSystemFont, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(label, x, y + 9);
+            };
+            triangle(centerX, bar.y - rowH + 2, 'CENTER');
+            triangle(bar.rowLeft, bar.y + 1, 'ORIGIN');
+
+            // Live cursor: one vertical line per half, at the current radius
+            ctx.strokeStyle = '#f43f5e';
+            ctx.lineWidth = 1.2;
+            ['left', 'right'].forEach(side => {
+                const probe = RADIAL_SCALES.find(sc => sc.side === side);
+                const g = rowGeometry(probe.row);
+                const x = stripX(probe, cursorRho, g.rowLeft, g.rowRight);
+                ctx.beginPath();
+                ctx.moveTo(x, gTop.y - rowH);
+                ctx.lineTo(x, gBot.y);
+                ctx.stroke();
+            });
+
+            // and one on the full-width ruler, which is linear in Gamma itself
+            const tauX = bar.rowLeft + ((1 + cursorGammaRe) / 2) * (bar.rowRight - bar.rowLeft);
+            ctx.beginPath();
+            ctx.moveTo(tauX, bar.y - rowH + 4);
+            ctx.lineTo(tauX, bar.y);
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        /**
+         * The real axis, read as one day.
+         *
+         * The horizontal line across the chart runs from the short circuit on the
+         * left to the open circuit on the right -- the same span the transmission
+         * coefficient ruler covers, tau = 1 + Gamma going 0 to 2. Mapping local
+         * midnight to midnight onto it turns that axis into a day bar, and the
+         * bright dot riding it says how far through the day we are.
+         */
+        function dayFractionOf(now) {
+            return (now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds() + now.getMilliseconds() / 1000) / 86400;
+        }
+
+        /** The point on the real axis that stands for the current hour of day. */
+        function dayOriginOf(now) {
+            return { x: centerX + (2 * dayFractionOf(now) - 1) * scaleRadius, y: centerY };
+        }
+
+        function drawDayAxis(now) {
+            const dayFraction = dayFractionOf(now);
+            const xOfFraction = f => centerX + (2 * f - 1) * scaleRadius;
+            const axisY = centerY;
+
+            ctx.save();
+
+            // Hour ticks along the axis, taller at the quarter days
+            ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
+            ctx.lineWidth = 0.8;
+            ctx.beginPath();
+            for (let h = 0; h <= 24; h++) {
+                const x = xOfFraction(h / 24);
+                const len = (h % 6 === 0) ? 7 : (h % 3 === 0 ? 4.5 : 2.5);
+                ctx.moveTo(x, axisY - len);
+                ctx.lineTo(x, axisY + len);
+            }
+            ctx.stroke();
+
+            ctx.fillStyle = '#64748b';
+            ctx.font = '7px ui-monospace, monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            for (let h = 0; h <= 24; h += 6) {
+                ctx.fillText(`${h.toString().padStart(2, '0')}h`, xOfFraction(h / 24), axisY + 9);
+            }
+
+            // Elapsed portion of the day, drawn over the axis
+            const dotX = xOfFraction(dayFraction);
+            ctx.strokeStyle = 'rgba(34, 211, 238, 0.85)';
+            ctx.lineWidth = 2.4;
+            ctx.beginPath();
+            ctx.moveTo(centerX - scaleRadius, axisY);
+            ctx.lineTo(dotX, axisY);
+            ctx.stroke();
+
+            // The dot itself
+            ctx.fillStyle = '#ffffff';
+            ctx.shadowColor = '#22d3ee';
+            ctx.shadowBlur = 12;
+            ctx.beginPath();
+            ctx.arc(dotX, axisY, 5, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+
+            // and the time it stands for
+            const stamp = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${Math.floor(now.getSeconds()).toString().padStart(2, '0')}`;
+            ctx.fillStyle = '#e2e8f0';
+            ctx.font = 'bold 10px ui-monospace, monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(stamp, dotX, axisY - 10);
+
+            ctx.fillStyle = '#64748b';
+            ctx.font = '7px ui-monospace, monospace';
+            ctx.fillText(`${(dayFraction * 100).toFixed(2)}% of day`, dotX, axisY - 21);
+
+            ctx.restore();
+        }
+
+        /**
+         * Plots the moment itself: the day bar along the real axis, plus a marker
+         * where the day path has actually reached.
+         */
+        function drawTimePlot(now, composite) {
+            // Where the interference sum stands on its own locus right now
+            const p = SmithMath.polarToCartesian(composite.mag, composite.phase, centerX, centerY, scaleRadius);
+            ctx.save();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 3.2, 0, 2 * Math.PI);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        /**
+         * The ghost of a hand: the traditional clock reading.
+         *
+         * The solid arms emanate from the hour of day, which slides along the
+         * real axis, so they no longer line up with the dial numbers. This faint
+         * line runs from the matched centre out to the rim in the same direction,
+         * which is what actually points at the 10 at twenty to eleven.
+         */
+        function drawGhostHand(mag, phase, color) {
+            ctx.save();
+            ctx.strokeStyle = color;
+            ctx.globalAlpha = 0.3;
+            ctx.lineWidth = 1;
+            ctx.setLineDash([5, 4]);
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY);
+            ctx.lineTo(centerX + scaleRadius * Math.cos(phase), centerY + scaleRadius * Math.sin(phase));
+            ctx.stroke();
+
+            // and a bead where the arm's own magnitude falls on that line
+            ctx.setLineDash([]);
+            ctx.globalAlpha = 0.65;
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(
+                centerX + mag * scaleRadius * Math.cos(phase),
+                centerY + mag * scaleRadius * Math.sin(phase),
+                2.5, 0, 2 * Math.PI
+            );
+            ctx.fill();
+            ctx.restore();
+        }
+
+        // ==========================================
+        // 2b. TIME LAPSE PLAYBACK
+        // ==========================================
+        // Runs simulated time forward at a fixed ratio: a whole day, week or year
+        // replayed inside a chosen number of real seconds, looping until stopped.
+        let lapse = null;
+
+        const LAPSE_SPANS = {
+            day: {
+                label: 'day',
+                start: d => new Date(d.getFullYear(), d.getMonth(), d.getDate()),
+                end: d => new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)
+            },
+            week: {
+                label: 'week',
+                // The week the current day falls in, starting Sunday
+                start: d => new Date(d.getFullYear(), d.getMonth(), d.getDate() - d.getDay()),
+                end: d => new Date(d.getFullYear(), d.getMonth(), d.getDate() - d.getDay() + 7)
+            },
+            year: {
+                label: 'year',
+                start: d => new Date(d.getFullYear(), 0, 1),
+                end: d => new Date(d.getFullYear() + 1, 0, 1)
+            }
+        };
+
+        function startLapse(spanKey, durationMs) {
+            const span = LAPSE_SPANS[spanKey];
+            if (!span) return;
+
+            isLive = false;
+            btnToggleLive.classList.remove('active');
+            btnToggleLive.innerHTML = '⏸ CUSTOM';
+
+            const anchor = new Date(simDate);
+            const from = span.start(anchor).getTime();
+            const to = span.end(anchor).getTime();
+
+            lapse = {
+                key: spanKey,
+                label: span.label,
+                from,
+                spanMs: to - from,
+                durationMs,
+                startedAt: performance.now()
+            };
+        }
+
+        function stopLapse() {
+            lapse = null;
+            document.getElementById('lapseStatus').textContent = 'stopped';
+        }
+
+        /** Advances simDate for this frame. Returns true if the lapse drove it. */
+        function advanceLapse() {
+            if (!lapse) return false;
+
+            const elapsed = performance.now() - lapse.startedAt;
+            const progress = (elapsed % lapse.durationMs) / lapse.durationMs;
+            simDate = new Date(lapse.from + progress * lapse.spanMs);
+            syncSlidersFromDate(simDate);
+
+            const seconds = (lapse.durationMs / 1000).toFixed(0);
+            document.getElementById('lapseStatus').textContent =
+                `1 ${lapse.label} / ${seconds} s · ${(progress * 100).toFixed(1)}%`;
+            return true;
+        }
+
         // Main Animation Frame
         function frame() {
-            if (isLive) {
+            if (advanceLapse()) {
+                // simDate is being driven by the time lapse
+            } else if (isLive) {
                 simDate = new Date();
                 syncSlidersFromDate(simDate);
             }
@@ -1146,8 +2267,25 @@
             // 1. Draw Smith Background Grid
             drawSmithChartGrid();
 
-            // 2. Draw Historical Date DNA Spiral
+            // 2. Draw Historical Date DNA Spiral (decorative, off by default)
             drawDateDNASpiral(now);
+
+            // 2b. The composite phasor drives the day path, the VSWR rings and
+            //     the radially scaled parameter cursor. Compute it once.
+            const composite = SmithMath.compositePolar(now);
+            const compGammaRe = composite.mag * Math.cos(composite.phase);
+            const compGammaIm = composite.mag * Math.sin(composite.phase);
+
+            // 2c. A full day of reflection, traced by the hour and minute arms
+            if (config.showDayPath) drawDayPath(now);
+
+            // 2d. Constant-VSWR circles: radius |Gamma|, centred on the origin
+            if (config.showVswrCircles) drawVswrCircles(composite.mag);
+
+            // 2e. The day bar along the real axis. It is drawn before the arms
+            //     because every arm now emanates from its dot.
+            const dayOrigin = dayOriginOf(now);
+            drawDayAxis(now);
 
             // 3. Compute Phasor Angles
             const minPhase = (min / 60.0) * (2 * Math.PI) - (Math.PI / 2);
@@ -1176,15 +2314,14 @@
 
             // 4. Composite Resultant Vector (Σ)
             if (config.showComposite) {
-                const minTarget = SmithMath.polarToCartesian(minMag, minPhase, centerX, centerY, scaleRadius);
-                const hrTarget = SmithMath.polarToCartesian(hrMag, hrPhase, centerX, centerY, scaleRadius);
+                const minTarget = SmithMath.polarToCartesian(minMag, minPhase, dayOrigin.x, dayOrigin.y, scaleRadius);
+                const hrTarget = SmithMath.polarToCartesian(hrMag, hrPhase, dayOrigin.x, dayOrigin.y, scaleRadius);
 
-                const compX = (minTarget.x - centerX) + (hrTarget.x - centerX);
-                const compY = (minTarget.y - centerY) + (hrTarget.y - centerY);
+                const compX = (minTarget.x - dayOrigin.x) + (hrTarget.x - dayOrigin.x);
+                const compY = (minTarget.y - dayOrigin.y) + (hrTarget.y - dayOrigin.y);
 
-                const compMagPx = Math.sqrt(compX * compX + compY * compY);
-                const compMagNorm = Math.min(1.0, compMagPx / (scaleRadius * 1.55));
-                const compPhase = Math.atan2(compY, compX);
+                const compMagNorm = composite.mag;
+                const compPhase = composite.phase;
 
                 // Parallelogram trace
                 ctx.save();
@@ -1193,47 +2330,79 @@
                 ctx.setLineDash([3, 3]);
                 ctx.beginPath();
                 ctx.moveTo(minTarget.x, minTarget.y);
-                ctx.lineTo(centerX + compX, centerY + compY);
+                ctx.lineTo(dayOrigin.x + compX, dayOrigin.y + compY);
                 ctx.lineTo(hrTarget.x, hrTarget.y);
                 ctx.stroke();
                 ctx.restore();
 
-                drawPhasorVector(compMagNorm, compPhase, '#a855f7', 2.0, 'Σ');
+                drawPhasorVector(compMagNorm, compPhase, '#a855f7', 5.0, 'Σ', dayOrigin);
             }
 
-            // 5. Draw Clock Hands
-            drawPhasorVector(hrMag, hrPhase, hrColor, 4.5, 'H');
-            drawPhasorVector(minMag, minPhase, minColor, 3.0, 'M');
+            // 5. Draw Clock Hands, deliberately overscaled so they stay legible
+            //    on top of a full day of interference-sum history.
+            // Ghosts first: centre-to-rim lines that still read against the dial
+            drawGhostHand(hrMag, hrPhase, hrColor);
+            drawGhostHand(minMag, minPhase, minColor);
+            if (config.showSecond) drawGhostHand(secMag, secPhase, secColor);
+
+            drawPhasorVector(hrMag, hrPhase, hrColor, 9.0, 'H', dayOrigin);
+            drawPhasorVector(minMag, minPhase, minColor, 6.0, 'M', dayOrigin);
 
             if (config.showSecond) {
-                drawPhasorVector(secMag, secPhase, secColor, 1.5, null);
+                drawPhasorVector(secMag, secPhase, secColor, 2.8, null, dayOrigin);
 
                 // Counterweight tail
                 const tailAngle = secPhase + Math.PI;
                 const tailLen = scaleRadius * 0.18;
                 ctx.save();
                 ctx.strokeStyle = secColor;
-                ctx.lineWidth = 2.5;
+                ctx.lineWidth = 4.0;
                 ctx.beginPath();
-                ctx.moveTo(centerX, centerY);
-                ctx.lineTo(centerX + tailLen * Math.cos(tailAngle), centerY + tailLen * Math.sin(tailAngle));
+                ctx.moveTo(dayOrigin.x, dayOrigin.y);
+                ctx.lineTo(dayOrigin.x + tailLen * Math.cos(tailAngle), dayOrigin.y + tailLen * Math.sin(tailAngle));
                 ctx.stroke();
                 ctx.restore();
             }
 
-            // Center Pin
+            // 6. Calendar wheels: date, month and year, each on its own circle
+            if (config.showCalendar) {
+                const hands = SmithMath.handVectors(now);
+                const calColors = { date: '#10b981', month: '#f59e0b', year: '#94a3b8' };
+                ['date', 'month', 'year'].forEach(id => {
+                    drawGhostHand(hands[id].mag, hands[id].phase, calColors[id]);
+                    drawPhasorVector(hands[id].mag, hands[id].phase, calColors[id], 4.5, hands[id].label, dayOrigin);
+                });
+            }
+
+            // The hub travels with the arms, so it sits on the day dot. The
+            // matched centre keeps only a faint reference cross.
+            ctx.strokeStyle = 'rgba(56, 189, 248, 0.5)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(centerX - 5, centerY);
+            ctx.lineTo(centerX + 5, centerY);
+            ctx.moveTo(centerX, centerY - 5);
+            ctx.lineTo(centerX, centerY + 5);
+            ctx.stroke();
+
             ctx.fillStyle = '#ffffff';
             ctx.beginPath();
-            ctx.arc(centerX, centerY, 3.5, 0, 2 * Math.PI);
+            ctx.arc(dayOrigin.x, dayOrigin.y, 3.2, 0, 2 * Math.PI);
             ctx.fill();
 
-            // 6. Update Dashboard & Analytics Readouts
-            updateAnalytics(now, minPhase, hrPhase, minMag, hrMag, dna, mood);
+            // 7. Mark where the interference sum has actually reached
+            drawTimePlot(now, composite);
+
+            // 8. Radially scaled parameters, cursored at the composite radius
+            drawRadialScales(composite.mag, compGammaRe);
+
+            // 9. Update Dashboard & Analytics Readouts
+            updateAnalytics(now, minPhase, hrPhase, minMag, hrMag, dna, mood, composite, compGammaRe, compGammaIm);
 
             requestAnimationFrame(frame);
         }
 
-        function updateAnalytics(now, minPhase, hrPhase, minMag, hrMag, dna, mood) {
+        function updateAnalytics(now, minPhase, hrPhase, minMag, hrMag, dna, mood, composite, compGammaRe, compGammaIm) {
             // Header display
             const yr = now.getFullYear();
             const mo = (now.getMonth() + 1).toString().padStart(2, '0');
@@ -1287,6 +2456,165 @@
             dnaFormulaStr.textContent = dna.formula;
             dnaHexStr.textContent = `${dna.hex.toUpperCase()} | RGB(${dna.r}, ${dna.g}, ${dna.b})`;
             moodDescStr.textContent = `${mood.season} Season (Hue: ${Math.round(mood.hue)}°, Lum: ${Math.round(mood.lightness)}%)`;
+
+            updateRadialReadout(composite.mag, compGammaRe);
+            updateFormulaPanel(now, composite, compGammaRe, compGammaIm);
+            updateDayHistory(now, composite);
+        }
+
+        /**
+         * Prints every ruler of the nomograph as a number, read at the radius the
+         * cursor is sitting on. Same arithmetic as the strip, without the ruler.
+         */
+        function updateRadialReadout(rho, gammaRe) {
+            const host = document.getElementById('scaleReadout');
+            host.innerHTML = RADIAL_SCALES.map(scale => {
+                const value = scale.side === 'full' ? 1 + gammaRe : scale.valueOf(rho);
+                return `<div class="scale-cell" title="${scale.formula}">
+                    <b>${scale.label}</b>
+                    <span>${formatScaleValue(value, scale.precision)}</span>
+                </div>`;
+            }).join('');
+        }
+
+        /**
+         * The chart's own arithmetic with this moment's numbers substituted in,
+         * so the reading and the formula that produced it sit side by side.
+         */
+        function updateFormulaPanel(now, composite, gammaRe, gammaIm) {
+            const z0 = config.z0;
+            const rho = composite.mag;
+            const z = SmithMath.gammaToImpedance(gammaRe, gammaIm, z0);
+            const y = SmithMath.gammaToAdmittance(gammaRe, gammaIm, z0);
+
+            const vswr = rho >= 0.9999 ? Infinity : (1 + rho) / (1 - rho);
+            const rl = rho > 1e-5 ? -20 * Math.log10(rho) : Infinity;
+            const ml = rho >= 0.9999 ? Infinity : -10 * Math.log10(1 - rho * rho);
+            const tau = Math.sqrt((1 + gammaRe) * (1 + gammaRe) + gammaIm * gammaIm);
+            const phaseDeg = composite.phase * 180 / Math.PI;
+
+            const f = (v, d = 3) => (isFinite(v) ? v.toFixed(d) : '∞');
+            const cxs = (re, im, d = 3) =>
+                (isFinite(re) && isFinite(im))
+                    ? `${re.toFixed(d)} ${im >= 0 ? '+' : '−'} j${Math.abs(im).toFixed(d)}`
+                    : '∞';
+
+            const rows = [
+                {
+                    section: '1. Normalization',
+                    title: 'Normalized impedance',
+                    symbolic: 'z = Z / Z₀ = r + jx',
+                    substituted: `z = (${cxs(z.R, z.X, 1)}) Ω / ${z0} Ω = ${cxs(z.r, z.x)}`,
+                    note: 'Every radius on the chart is a ratio to the line impedance, never an absolute ohm value.'
+                },
+                {
+                    section: '1. Normalization',
+                    title: 'Normalized admittance',
+                    symbolic: 'y = Y / Y₀ = 1 / z = g + jb',
+                    substituted: `y = 1 / (${cxs(z.r, z.x)}) = ${cxs(y.g, y.b)}`,
+                    note: 'y sits diametrically opposite z: same radius, phase rotated by 180°.'
+                },
+                {
+                    section: '2. Reflection Coefficient (Γ)',
+                    title: 'Definition',
+                    symbolic: 'Γ = (Zₗ − Z₀) / (Zₗ + Z₀) = |Γ| e^{jθ}',
+                    substituted: `Γ = ${cxs(gammaRe, gammaIm)} = ${f(rho)} ∠ ${f(phaseDeg, 1)}°`,
+                    note: 'The Σ phasor: the hour and minute arms added, renormalised to the unit circle.'
+                },
+                {
+                    section: '2. Reflection Coefficient (Γ)',
+                    title: 'In terms of normalized impedance',
+                    symbolic: 'Γ = (z − 1) / (z + 1)',
+                    substituted: `Γ = ((${cxs(z.r, z.x)}) − 1) / ((${cxs(z.r, z.x)}) + 1) = ${cxs(gammaRe, gammaIm)}`
+                },
+                {
+                    section: '2. Reflection Coefficient (Γ)',
+                    title: 'Inverting for normalized impedance',
+                    symbolic: 'z = (1 + Γ) / (1 − Γ)',
+                    substituted: `z = (1 + ${cxs(gammaRe, gammaIm)}) / (1 − ${cxs(gammaRe, gammaIm)}) = ${cxs(z.r, z.x)}`
+                },
+                {
+                    section: '2. Reflection Coefficient (Γ)',
+                    title: 'Magnitude, from VSWR',
+                    symbolic: '|Γ| = (VSWR − 1) / (VSWR + 1)',
+                    substituted: `|Γ| = (${f(vswr, 2)} − 1) / (${f(vswr, 2)} + 1) = ${f(rho)}`
+                },
+                {
+                    section: '3. Voltage Standing Wave Ratio',
+                    title: 'Definition',
+                    symbolic: 'VSWR = Vₘₐₓ / Vₘᵢₙ = (1 + |Γ|) / (1 − |Γ|)',
+                    substituted: `VSWR = (1 + ${f(rho)}) / (1 − ${f(rho)}) = ${f(vswr, 2)} : 1`
+                },
+                {
+                    section: '3. Voltage Standing Wave Ratio',
+                    title: 'Graphical use',
+                    symbolic: 'circle centred on r = 1, x = 0, radius |Γ|',
+                    substituted: `constant-VSWR circle of radius ${f(rho)} about the matched centre`,
+                    note: 'Drawn on the chart in red. Each clock arm rides its own constant-VSWR circle.'
+                },
+                {
+                    section: '4. Derived losses',
+                    title: 'Return loss',
+                    symbolic: 'RL = −20·log₁₀|Γ|',
+                    substituted: `RL = −20·log₁₀(${f(rho)}) = ${f(rl, 2)} dB`
+                },
+                {
+                    section: '4. Derived losses',
+                    title: 'Reflection (mismatch) loss',
+                    symbolic: 'ML = −10·log₁₀(1 − |Γ|²)',
+                    substituted: `ML = −10·log₁₀(1 − ${f(rho * rho)}) = ${f(ml, 3)} dB`
+                },
+                {
+                    section: '4. Derived losses',
+                    title: 'Transmission coefficient',
+                    symbolic: 'τ = 1 + Γ,  τₚ = 1 − |Γ|²',
+                    substituted: `τ = ${f(tau)},  τₚ = ${f(1 - rho * rho)}`
+                },
+                {
+                    section: '5. The day on the real axis',
+                    title: 'Where the dot sits',
+                    symbolic: 'x = 2·(seconds since midnight / 86400) − 1',
+                    substituted: (() => {
+                        const secs = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+                        return `${secs} s / 86400 s = ${(secs / 86400 * 100).toFixed(2)}% → Γᵣ = ${(2 * secs / 86400 - 1).toFixed(3)}`;
+                    })(),
+                    note: 'Midnight is the short circuit at the far left; 23:59 is the open circuit at the far right.'
+                }
+            ];
+
+            let html = '';
+            let lastSection = null;
+            for (const row of rows) {
+                if (row.section !== lastSection) {
+                    html += `<div class="formula-section">${row.section}</div>`;
+                    lastSection = row.section;
+                }
+                html += `<div class="formula-row">
+                    <div class="formula-symbolic">${row.symbolic}<span class="formula-title">${row.title}</span></div>
+                    <div class="formula-substituted">${row.substituted}</div>
+                    ${row.note ? `<div class="formula-note">${row.note}</div>` : ''}
+                </div>`;
+            }
+            document.getElementById('formulaPanel').innerHTML = html;
+            document.getElementById('formulaZ0Badge').textContent = `Z₀ = ${z0} Ω`;
+        }
+
+        /** A day's worth of normalization and reflection, summarised. */
+        function updateDayHistory(now, composite) {
+            const path = getDayPath(now);
+            const hhmm = d => `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+            const rho = composite.mag;
+            const vswr = rho >= 0.9999 ? '∞' : ((1 + rho) / (1 - rho)).toFixed(2);
+            const rl = rho > 1e-5 ? (-20 * Math.log10(rho)).toFixed(2) : '∞';
+
+            document.getElementById('dayHistoryDate').textContent =
+                `${path.dayStart.getFullYear()}-${(path.dayStart.getMonth() + 1).toString().padStart(2, '0')}-${path.dayStart.getDate().toString().padStart(2, '0')}`;
+            document.getElementById('valBestMatch').textContent =
+                `${hhmm(path.best.date)} · |Γ| ${path.best.polar.mag.toFixed(3)}`;
+            document.getElementById('valWorstMatch').textContent =
+                `${hhmm(path.worst.date)} · |Γ| ${path.worst.polar.mag.toFixed(3)}`;
+            document.getElementById('valCompVswr').textContent = `${vswr} : 1`;
+            document.getElementById('valCompRl').textContent = `${rl} dB`;
         }
 
         // Start Clock
