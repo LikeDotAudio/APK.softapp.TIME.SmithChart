@@ -305,6 +305,24 @@
             gap: 16px;
         }
 
+        /* A flip between constructive and destructive is worth noticing, so the
+           panel gives a short bounce when the state actually changes. */
+        @keyframes phasor-bounce {
+            0%   { transform: scale(1); }
+            22%  { transform: scale(1.035) translateY(-3px); }
+            48%  { transform: scale(0.992) translateY(1px); }
+            72%  { transform: scale(1.012) translateY(-1px); }
+            100% { transform: scale(1); }
+        }
+
+        .card.state-bounce {
+            animation: phasor-bounce 520ms cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .card.state-bounce { animation: none; }
+        }
+
         .card {
             background: var(--bg-card);
             border: 1px solid var(--bg-card-border);
@@ -458,9 +476,16 @@
             font-weight: 600;
         }
 
+        .assign-select {
+            width: 100%;
+            padding: 2px 4px;
+            font-size: 0.68rem;
+            font-family: var(--font-mono);
+        }
+
         .time-slider-row {
             display: grid;
-            grid-template-columns: 70px 1fr 60px;
+            grid-template-columns: 62px minmax(0, 1fr) 52px 132px;
             gap: 8px;
             align-items: center;
             font-size: 0.8rem;
@@ -549,26 +574,31 @@
                         <span>Year:</span>
                         <input type="range" id="sliderYear" min="1900" max="2100" value="2026">
                         <span id="labelYear">2026</span>
+                        <select class="assign-select" data-field="year"></select>
                     </div>
                     <div class="time-slider-row">
                         <span>Month:</span>
                         <input type="range" id="sliderMonth" min="1" max="12" value="8">
                         <span id="labelMonth">08</span>
+                        <select class="assign-select" data-field="month"></select>
                     </div>
                     <div class="time-slider-row">
                         <span>Day:</span>
                         <input type="range" id="sliderDay" min="1" max="31" value="23">
                         <span id="labelDay">23</span>
+                        <select class="assign-select" data-field="day"></select>
                     </div>
                     <div class="time-slider-row">
                         <span>Hour:</span>
                         <input type="range" id="sliderHour" min="0" max="23" value="11">
                         <span id="labelHour">11:00</span>
+                        <select class="assign-select" data-field="hour"></select>
                     </div>
                     <div class="time-slider-row">
                         <span>Minute:</span>
                         <input type="range" id="sliderMinute" min="0" max="59" value="18">
                         <span id="labelMinute">18m</span>
+                        <select class="assign-select" data-field="minute"></select>
                     </div>
                 </div>
 
@@ -963,6 +993,36 @@
             { id: 'month+year',    label: 'Month × Year',   a: 'month',  b: 'year' }
         ];
 
+        /**
+         * Which wheel each time field is assigned to drive.
+         *
+         * By default every field drives its namesake, but the dropdowns let any
+         * field be routed to any wheel: point the Day slider at the hour vector
+         * and the hour arm starts reading days. Two fields on one wheel is
+         * allowed; the later field in this list wins it.
+         */
+        const FIELD_ORDER = ['second', 'minute', 'hour', 'day', 'month', 'year'];
+        const WHEELS = ['second', 'minute', 'hour', 'date', 'month', 'year'];
+        const WHEEL_LABELS = {
+            second: 'Second needle', minute: 'Minute vector', hour: 'Hour vector',
+            date: 'Date wheel', month: 'Month wheel', year: 'Year wheel'
+        };
+
+        const fieldToWheel = {
+            second: 'second', minute: 'minute', hour: 'hour',
+            day: 'date', month: 'month', year: 'year'
+        };
+
+        /** wheel -> the field currently feeding it, or null. */
+        function wheelSources() {
+            const out = {};
+            for (const field of FIELD_ORDER) {
+                const wheel = fieldToWheel[field];
+                if (wheel && wheel !== 'none') out[wheel] = field;
+            }
+            return out;
+        }
+
         const plotPair = () =>
             PLOT_PAIRS.find(pr => pr.id === config.plotPair) || PLOT_PAIRS[0];
 
@@ -1065,23 +1125,37 @@
                     ? Math.max(0.02, Math.min(1, normal[id]))
                     : HAND_MAGS[id];
 
+                // Every field's own angle and ratio, before routing
+                const fields = {
+                    second: { phase: turn(seconds, 60), normal: normal.second, value: pad(Math.floor(seconds)) },
+                    minute: { phase: turn(minutes, 60), normal: normal.minute, value: pad(date.getMinutes()) },
+                    hour:   { phase: turn(hours12, 12), normal: normal.hour,   value: pad((date.getHours() % 12) || 12) },
+                    day:    { phase: turn(dayFrac, dim), normal: normal.date,  value: pad(date.getDate()) },
+                    month:  { phase: turn(monthFrac, 12), normal: normal.month, value: pad(date.getMonth() + 1) },
+                    year:   { phase: turn(dayOfYearFrac, 1), normal: normal.year, value: pad(yearTwoDigit) }
+                };
+
+                const sources = wheelSources();
+                const wheel = (id, fallbackField) => {
+                    const field = sources[id] || fallbackField;
+                    const f = fields[field];
+                    const mag = (config.normalizedRadius || id === 'year')
+                        ? Math.max(0.02, Math.min(1, f.normal))
+                        : HAND_MAGS[id];
+                    return { mag, normal: f.normal, phase: f.phase, value: f.value, field };
+                };
+
                 return {
-                    second: { mag: radiusOf('second'), normal: normal.second, phase: turn(seconds, 60), label: 'S',
-                              value: pad(Math.floor(seconds)) },
-                    minute: { mag: radiusOf('minute'), normal: normal.minute, phase: turn(minutes, 60), label: 'M',
-                              value: pad(date.getMinutes()) },
-                    hour:   { mag: radiusOf('hour'), normal: normal.hour,   phase: turn(hours12, 12), label: 'H',
-                              value: pad((date.getHours() % 12) || 12) },
-                    date:   { mag: radiusOf('date'), normal: normal.date,   phase: turn(dayFrac, dim), label: 'D',
-                              value: pad(date.getDate()) },
-                    month:  { mag: radiusOf('month'), normal: normal.month,  phase: turn(monthFrac, 12), label: 'MO',
-                              value: pad(date.getMonth() + 1) },
-                    year:   { mag: radiusOf('year'), normal: normal.year,   phase: turn(dayOfYearFrac, 1), label: 'Y',
-                              value: pad(yearTwoDigit) }
+                    second: { ...wheel('second', 'second'), label: 'S' },
+                    minute: { ...wheel('minute', 'minute'), label: 'M' },
+                    hour:   { ...wheel('hour', 'hour'),     label: 'H' },
+                    date:   { ...wheel('date', 'day'),      label: 'D' },
+                    month:  { ...wheel('month', 'month'),   label: 'MO' },
+                    year:   { ...wheel('year', 'year'),     label: 'Y' }
                 };
             }
 
-            /**
+/**
              * The composite reflection coefficient: hour + minute as vectors,
              * renormalised so the pair can never leave the unit circle. This is
              * the point the day path traces and the parameter cursor reads.
@@ -1379,6 +1453,19 @@
             resetView();
             document.getElementById('zoomBadge').textContent = '1.00\u00d7';
         }
+
+        // Each time field says which wheel it is driving
+        document.querySelectorAll('.assign-select').forEach(select => {
+            const field = select.dataset.field;
+            select.innerHTML = WHEELS
+                .map(w => `<option value="${w}"${fieldToWheel[field] === w ? ' selected' : ''}>\u2192 ${WHEEL_LABELS[w]}</option>`)
+                .join('') + '<option value="none">\u2192 (unassigned)</option>';
+            select.addEventListener('change', e => {
+                fieldToWheel[field] = e.target.value;
+                dayPathCache = null;
+                pivotTrace.length = 0;
+            });
+        });
 
         // Populate and wire the plotted-intersection selector
         const plotPairSelect = document.getElementById('plotPairSelect');
@@ -3370,6 +3457,8 @@
             const barPercent = Math.max(0, Math.min(100, (1 - (deltaDeg / 180)) * 100));
             interferenceBar.style.width = `${barPercent}%`;
 
+            const previousState = interferenceBadge.textContent;
+
             if (deltaDeg <= 20) {
                 interferenceBadge.textContent = 'CONSTRUCTIVE';
                 interferenceBadge.style.color = '#10b981';
@@ -3382,6 +3471,17 @@
                 interferenceBadge.textContent = 'QUADRATURE';
                 interferenceBadge.style.color = '#38bdf8';
                 interferenceBadge.style.borderColor = 'rgba(56, 189, 248, 0.4)';
+            }
+
+            // Only on an actual change of state, and only once the animation from
+            // the last one has finished, or it would never get to play out.
+            if (previousState && previousState !== interferenceBadge.textContent) {
+                const panel = interferenceBadge.closest('.card');
+                if (panel && !panel.classList.contains('state-bounce')) {
+                    panel.classList.add('state-bounce');
+                    panel.addEventListener('animationend',
+                        () => panel.classList.remove('state-bounce'), { once: true });
+                }
             }
 
             // Hand RF Metrics
