@@ -113,6 +113,7 @@
         }
 
         .canvas-card {
+            align-self: center;
             background: var(--bg-card);
             border: 1px solid var(--bg-card-border);
             border-radius: 12px;
@@ -499,6 +500,8 @@
                 </div>
 
                 <!-- Legend -->
+            </div>
+
                 <div class="canvas-legend">
                     <div class="legend-item">
                         <span class="legend-dot" style="background: #f43f5e;"></span>
@@ -533,7 +536,6 @@
                         <span>Interference Sum (&#931;) over 24 h</span>
                     </div>
                 </div>
-            </div>
 
             <!-- Radially scaled parameters, read at this moment's radius -->
             <div class="card">
@@ -1193,14 +1195,28 @@
         let cssWidth = 680;
         let cssHeight = 880;
 
+        // Room the legend and the card's own padding need underneath the canvas
+        const CANVAS_CHROME_PX = 92;
+
         function resizeCanvas() {
             dpr = window.devicePixelRatio || 1;
 
-            // Take whatever width the stage column actually offers, rather than
-            // holding the chart down to a fixed size.
+            // Measure the column, not the card: the card hugs the canvas, so
+            // asking it how wide it is would just echo the last size back.
             const card = canvas.parentElement;
-            const available = card ? card.clientWidth - 12 : window.innerWidth - 400;
-            const width = Math.max(320, Math.floor(available));
+            const column = card ? card.parentElement : null;
+            const availableWidth = column ? column.clientWidth - 12 : window.innerWidth - 400;
+
+            // The canvas is a square chart with the parameter strip stacked under
+            // it, so its height is always a fixed multiple of its width. Work that
+            // backwards from the viewport so the whole thing fits on screen
+            // without scrolling, then take whichever limit bites first.
+            const cardTop = card ? card.getBoundingClientRect().top : 0;
+            const availableHeight = window.innerHeight - cardTop - CANVAS_CHROME_PX;
+            const stripRatio = config.showRadialScales ? 0.28 : 0;
+            const widthFromHeight = availableHeight / (1 + stripRatio);
+
+            const width = Math.max(320, Math.floor(Math.min(availableWidth, widthFromHeight)));
 
             // Reserve a band at the foot of the canvas for the parameter strip,
             // then centre the chart in whatever is left above it.
