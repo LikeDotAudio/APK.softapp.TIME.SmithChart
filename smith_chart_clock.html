@@ -105,6 +105,47 @@
         }
 
         /* Canvas Stage */
+        /* Chart and its controller sit side by side, so the controller fills the
+           space the height-limited chart leaves beside it. */
+        .stage-row {
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+            justify-content: center;
+            flex-wrap: wrap;
+            min-width: 0;
+        }
+
+        .palette-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 3px 0;
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            cursor: pointer;
+        }
+
+        .palette-row input[type="color"] {
+            width: 26px;
+            height: 18px;
+            padding: 0;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 4px;
+            background: none;
+            cursor: pointer;
+        }
+
+        .stage-controls {
+            flex: 1 1 320px;
+            min-width: 300px;
+            max-width: 430px;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
         .stage-container {
             display: flex;
             flex-direction: column;
@@ -113,7 +154,7 @@
         }
 
         .canvas-card {
-            align-self: center;
+            align-self: flex-start;
             background: var(--bg-card);
             border: 1px solid var(--bg-card-border);
             border-radius: 12px;
@@ -474,20 +515,14 @@
 </head>
 <body>
 
-    <header>
-        <div class="header-title">
-            <h1>SMITH CHART CLOCK</h1>
-            <span class="badge">RF Phasor Chronograph</span>
-        </div>
-        <div class="header-clock" id="topClockDisplay">
-            <span id="liveDateStr">2026-08-23</span>
-            <span id="liveTimeStr" style="color: #f43f5e;">11:18:24</span>
-        </div>
-    </header>
+    <!-- The banner is gone: the chart wants the height. These two still carry
+         the live clock for any code that reads them. -->
+    <span id="liveDateStr" hidden></span><span id="liveTimeStr" hidden></span>
 
     <main class="main-layout">
         <!-- Stage / Canvas Area -->
         <div class="stage-container">
+            <div class="stage-row">
             <div class="canvas-card">
                 <canvas id="smithClockCanvas" width="680" height="880"></canvas>
                 
@@ -502,156 +537,8 @@
                 <!-- Legend -->
             </div>
 
-                <div class="canvas-legend">
-                    <div class="legend-item">
-                        <span class="legend-dot" style="background: #f43f5e;"></span>
-                        <span>Hour Vector (Slow / Low-Freq)</span>
-                    </div>
-                    <div class="legend-item">
-                        <span class="legend-dot" style="background: #38bdf8;"></span>
-                        <span>Minute Vector (Fast / High-Freq)</span>
-                    </div>
-                    <div class="legend-item">
-                        <span class="legend-dot" style="background: #facc15;"></span>
-                        <span>Second Needle</span>
-                    </div>
-                    <div class="legend-item">
-                        <span class="legend-dot" style="background: #a855f7;"></span>
-                        <span>Interference Sum (Σ)</span>
-                    </div>
-                    <div class="legend-item">
-                        <span class="legend-dot" style="background: #10b981;"></span>
-                        <span>Date Wheel (D)</span>
-                    </div>
-                    <div class="legend-item">
-                        <span class="legend-dot" style="background: #f59e0b;"></span>
-                        <span>Month Wheel (MO)</span>
-                    </div>
-                    <div class="legend-item">
-                        <span class="legend-dot" style="background: #94a3b8;"></span>
-                        <span>Year Wheel (Y)</span>
-                    </div>
-                    <div class="legend-item">
-                        <span class="legend-dot" style="background: #22d3ee;"></span>
-                        <span>Interference Sum (&#931;) over 24 h</span>
-                    </div>
-                </div>
-
-            <!-- Radially scaled parameters, read at this moment's radius -->
-            <div class="card">
-                <div class="card-header">
-                    <span class="card-title">📐 Radially Scaled Parameters</span>
-                    <span class="badge">at |&#915;| of the &#931; phasor</span>
-                </div>
-                <div class="scale-readout" id="scaleReadout"></div>
-            </div>
-
-            <!-- The chart's arithmetic, with this moment's numbers filled in -->
-            <div class="card">
-                <div class="card-header">
-                    <span class="card-title">&#402;(x) Formulae, Filled In</span>
-                    <span class="badge" id="formulaZ0Badge">Z&#8320; = 50 &#937;</span>
-                </div>
-                <div id="formulaPanel"></div>
-            </div>
-        </div>
-
-        <!-- Sidebar / Analytics & Control Deck -->
-        <div class="sidebar">
-
-            <!-- RF Phasor & Interference Panel -->
-            <div class="card">
-                <div class="card-header">
-                    <span class="card-title">📡 Dual-Phasor & Interference</span>
-                    <span class="badge" id="interferenceBadge">IN PHASE</span>
-                </div>
-
-                <div class="metrics-grid">
-                    <div class="metric-box">
-                        <span class="metric-label">Phase Delta (Δθ)</span>
-                        <span class="metric-val" id="valPhaseDelta" style="color: #38bdf8;">0.0°</span>
-                    </div>
-                    <div class="metric-box">
-                        <span class="metric-label">Constructive Factor</span>
-                        <span class="metric-val" id="valInterferenceRatio" style="color: #10b981;">2.00x</span>
-                    </div>
-                    <div class="metric-box">
-                        <span class="metric-label">Minute Hand VSWR</span>
-                        <span class="metric-val" id="valMinVswr" style="color: #facc15;">39.0 : 1</span>
-                    </div>
-                    <div class="metric-box">
-                        <span class="metric-label">Hour Hand Return Loss</span>
-                        <span class="metric-val" id="valHrRl" style="color: #f43f5e;">4.44 dB</span>
-                    </div>
-                </div>
-
-                <div class="interference-container">
-                    <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted);">
-                        <span>Destructive (180°)</span>
-                        <span>Quadrature (90°)</span>
-                        <span>Constructive (0°)</span>
-                    </div>
-                    <div class="interference-bar-bg">
-                        <div class="interference-bar-fill" id="interferenceBar"></div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- A day of normalization and reflection -->
-            <div class="card">
-                <div class="card-header">
-                    <span class="card-title">🗓️ Day History</span>
-                    <span class="badge" id="dayHistoryPair">Hour × Minute</span>
-                    <span class="badge" id="dayHistoryDate">--</span>
-                </div>
-                <div class="metrics-grid">
-                    <div class="metric-box">
-                        <span class="metric-label">Best Match Today</span>
-                        <span class="metric-val" id="valBestMatch" style="color: #10b981;">--</span>
-                    </div>
-                    <div class="metric-box">
-                        <span class="metric-label">Worst Match Today</span>
-                        <span class="metric-val" id="valWorstMatch" style="color: #ef4444;">--</span>
-                    </div>
-                    <div class="metric-box">
-                        <span class="metric-label">&#931; VSWR Now</span>
-                        <span class="metric-val" id="valCompVswr" style="color: #facc15;">--</span>
-                    </div>
-                    <div class="metric-box">
-                        <span class="metric-label">&#931; Return Loss Now</span>
-                        <span class="metric-val" id="valCompRl" style="color: #38bdf8;">--</span>
-                    </div>
-                </div>
-                <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 8px; line-height: 1.5;">
-                    The locus on the chart is one full local day of the hour and minute
-                    arms added together, sampled every two minutes. Solid is elapsed,
-                    faint is still to come.
-                </div>
-            </div>
-
-            <!-- Date-DNA & Chronobiological Engine -->
-            <div class="card">
-                <div class="card-header">
-                    <span class="card-title">🧬 Date DNA & Mood Engine</span>
-                    <select id="colorEngineSelect" style="width: auto; padding: 4px 8px; font-size: 0.75rem;">
-                        <option value="date-dna">Date DNA Formula</option>
-                        <option value="mood">Solar Mood Engine</option>
-                        <option value="rf-phasor" selected>RF Phasor Neon</option>
-                    </select>
-                </div>
-
-                <div class="dna-box">
-                    <div class="dna-swatch" id="dnaSwatch"></div>
-                    <div class="dna-info">
-                        <div id="dnaFormulaStr">R:208, G:123, B:26</div>
-                        <div id="dnaHexStr" style="color: var(--accent-cyan); font-weight: bold;">#d07b1a</div>
-                        <div id="moodDescStr" style="color: var(--text-muted); font-size: 0.75rem;">Late Summer (Hue: 331°, Lum: 44%)</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Time Travel & Simulation Controls -->
-            <div class="card">
+            <div class="stage-controls">
+<div class="card">
                 <div class="card-header">
                     <span class="card-title">⏳ Time Travel & Simulation</span>
                     <button id="btnToggleLive" class="active">● LIVE</button>
@@ -712,6 +599,186 @@
                 </div>
             </div>
 
+
+<div class="card">
+                <div class="card-header">
+                    <span class="card-title">📡 Dual-Phasor & Interference</span>
+                    <span class="badge" id="interferenceBadge">IN PHASE</span>
+                </div>
+
+                <div class="metrics-grid">
+                    <div class="metric-box">
+                        <span class="metric-label">Phase Delta (Δθ)</span>
+                        <span class="metric-val" id="valPhaseDelta" style="color: #38bdf8;">0.0°</span>
+                    </div>
+                    <div class="metric-box">
+                        <span class="metric-label">Constructive Factor</span>
+                        <span class="metric-val" id="valInterferenceRatio" style="color: #10b981;">2.00x</span>
+                    </div>
+                    <div class="metric-box">
+                        <span class="metric-label">Minute Hand VSWR</span>
+                        <span class="metric-val" id="valMinVswr" style="color: #facc15;">39.0 : 1</span>
+                    </div>
+                    <div class="metric-box">
+                        <span class="metric-label">Hour Hand Return Loss</span>
+                        <span class="metric-val" id="valHrRl" style="color: #f43f5e;">4.44 dB</span>
+                    </div>
+                </div>
+
+                <div class="interference-container">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted);">
+                        <span>Destructive (180°)</span>
+                        <span>Quadrature (90°)</span>
+                        <span>Constructive (0°)</span>
+                    </div>
+                    <div class="interference-bar-bg">
+                        <div class="interference-bar-fill" id="interferenceBar"></div>
+                    </div>
+                </div>
+            </div>
+<div class="card">
+                <div class="card-header">
+                    <span class="card-title">🗓️ Day History</span>
+                    <span class="badge" id="dayHistoryPair">Hour × Minute</span>
+                    <span class="badge" id="dayHistoryDate">--</span>
+                </div>
+                <div class="metrics-grid">
+                    <div class="metric-box">
+                        <span class="metric-label">Best Match Today</span>
+                        <span class="metric-val" id="valBestMatch" style="color: #10b981;">--</span>
+                    </div>
+                    <div class="metric-box">
+                        <span class="metric-label">Worst Match Today</span>
+                        <span class="metric-val" id="valWorstMatch" style="color: #ef4444;">--</span>
+                    </div>
+                    <div class="metric-box">
+                        <span class="metric-label">&#931; VSWR Now</span>
+                        <span class="metric-val" id="valCompVswr" style="color: #facc15;">--</span>
+                    </div>
+                    <div class="metric-box">
+                        <span class="metric-label">&#931; Return Loss Now</span>
+                        <span class="metric-val" id="valCompRl" style="color: #38bdf8;">--</span>
+                    </div>
+                </div>
+                <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 8px; line-height: 1.5;">
+                    The locus on the chart is one full local day of the hour and minute
+                    arms added together, sampled every two minutes. Solid is elapsed,
+                    faint is still to come.
+                </div>
+            </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">&#8721; Normalized Time</span>
+                        <span class="badge">a full turn = 1</span>
+                    </div>
+                    <div class="scale-readout" id="normalizedPanel"></div>
+                    <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 8px; line-height: 1.5;">
+                        The same move the chart makes with impedance: divide by the
+                        whole and keep the ratio. 24 hours is 1, 60 minutes is 1,
+                        60 seconds is 1, so every reading here is already a |&#915;|.
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">🎨 Colours</span>
+                        <span class="badge">click a swatch</span>
+                    </div>
+                    <div id="palettePanel"></div>
+                </div>
+            </div>
+            </div>
+
+                <div class="canvas-legend">
+                    <div class="legend-item">
+                        <span class="legend-dot" style="background: #f43f5e;"></span>
+                        <span>Hour Vector (Slow / Low-Freq)</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-dot" style="background: #38bdf8;"></span>
+                        <span>Minute Vector (Fast / High-Freq)</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-dot" style="background: #facc15;"></span>
+                        <span>Second Needle</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-dot" style="background: #a855f7;"></span>
+                        <span>Interference Sum (Σ)</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-dot" style="background: #10b981;"></span>
+                        <span>Date Wheel (D)</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-dot" style="background: #f59e0b;"></span>
+                        <span>Month Wheel (MO)</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-dot" style="background: #94a3b8;"></span>
+                        <span>Year Wheel (Y)</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-dot" style="background: #22d3ee;"></span>
+                        <span>Interference Sum (&#931;) over 24 h</span>
+                    </div>
+                </div>
+
+            <!-- Radially scaled parameters, read at this moment's radius -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">📐 Radially Scaled Parameters</span>
+                    <span class="badge">at |&#915;| of the &#931; phasor</span>
+                </div>
+                <div class="scale-readout" id="scaleReadout"></div>
+            </div>
+
+            <!-- The chart's arithmetic, with this moment's numbers filled in -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">&#402;(x) Formulae, Filled In</span>
+                    <span class="badge" id="formulaZ0Badge">Z&#8320; = 50 &#937;</span>
+                </div>
+                <div id="formulaPanel"></div>
+            </div>
+        </div>
+
+        <!-- Sidebar / Analytics & Control Deck -->
+        <div class="sidebar">
+
+            <!-- RF Phasor & Interference Panel -->
+            
+
+            <!-- A day of normalization and reflection -->
+
+            
+
+            <!-- Date-DNA & Chronobiological Engine -->
+<div class="card">
+                <div class="card-header">
+                    <span class="card-title">🧬 Date DNA & Mood Engine</span>
+                    <select id="colorEngineSelect" style="width: auto; padding: 4px 8px; font-size: 0.75rem;">
+                        <option value="date-dna">Date DNA Formula</option>
+                        <option value="mood">Solar Mood Engine</option>
+                        <option value="rf-phasor" selected>RF Phasor Neon</option>
+                    </select>
+                </div>
+
+                <div class="dna-box">
+                    <div class="dna-swatch" id="dnaSwatch"></div>
+                    <div class="dna-info">
+                        <div id="dnaFormulaStr">R:208, G:123, B:26</div>
+                        <div id="dnaHexStr" style="color: var(--accent-cyan); font-weight: bold;">#d07b1a</div>
+                        <div id="moodDescStr" style="color: var(--text-muted); font-size: 0.75rem;">Late Summer (Hue: 331°, Lum: 44%)</div>
+                    </div>
+                </div>
+            </div>
+            
+
+            <!-- Time Travel & Simulation Controls -->
+            
+
             <!-- Display & Grid Options -->
             <div class="card">
                 <div class="card-header">
@@ -747,6 +814,18 @@
                     <div class="switch-row">
                         <span>Calendar Wheels (Date / Month / Year)</span>
                         <input type="checkbox" id="chkCalendar" checked>
+                    </div>
+                    <div class="switch-row">
+                        <span>Radius = normalized value (24 h &#8594; 1)</span>
+                        <input type="checkbox" id="chkNormalized">
+                    </div>
+                    <div class="switch-row">
+                        <span>Time Landmarks (day axis &amp; &#177;1 arcs)</span>
+                        <input type="checkbox" id="chkLandmarks" checked>
+                    </div>
+                    <div class="switch-row">
+                        <span>Pivot Trace (centroid path)</span>
+                        <input type="checkbox" id="chkPivotTrace" checked>
                     </div>
                     <div class="switch-row">
                         <span>Radially Scaled Parameters</span>
@@ -791,6 +870,36 @@
         // ==========================================
         // 1. RF MATH & SMITH CHART COMPUTATIONS
         // ==========================================
+        /**
+         * Every colour the moving parts are drawn in, in one place so the panel
+         * can offer them all and the render can read them back each frame.
+         */
+        const PALETTE = {
+            dayAxis:   { label: 'Day axis (hours)',    value: '#fde047' },
+            arcMorning:{ label: 'x = +1 arc (1..12)',   value: '#fb923c' },
+            arcEvening:{ label: 'x = -1 arc (0..-12)',  value: '#22c55e' },
+            hour:     { label: 'Hour vector',        value: '#f43f5e' },
+            minute:   { label: 'Minute vector',      value: '#38bdf8' },
+            second:   { label: 'Second needle',      value: '#facc15' },
+            sigma:    { label: 'Interference sum',   value: '#a855f7' },
+            date:     { label: 'Date wheel',         value: '#10b981' },
+            month:    { label: 'Month wheel',        value: '#f59e0b' },
+            year:     { label: 'Year wheel',         value: '#94a3b8' },
+            trail:    { label: 'Day trail (future)', value: '#22d3ee' },
+            pivotPath:{ label: 'Pivot trace',        value: '#fb7185' },
+            triangle: { label: 'Anchor triangle',    value: '#ffffff' },
+            clock:    { label: 'Clock readout',      value: '#f43f5e' }
+        };
+
+        const paint = key => PALETTE[key].value;
+
+        /** #rrggbb plus an alpha, as an rgba() string. */
+        function tint(key, alpha) {
+            const hex = PALETTE[key].value.replace('#', '');
+            const n = parseInt(hex, 16);
+            return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+        }
+
         // Magnitudes of each wheel. Slower wheels sit closer to the matched centre.
         const HAND_MAGS = {
             minute: 0.95,
@@ -924,18 +1033,37 @@
 
                 const pad = n => n.toString().padStart(2, '0');
 
+                // Normalized to 1, the same move the chart makes with impedance:
+                // divide by the whole and keep the ratio. A day is 1, an hour is
+                // 1, a minute is 1 -- so each reading is already a |Gamma|.
+                const normal = {
+                    second: seconds / 60,
+                    minute: minutes / 60,
+                    hour: (date.getHours() + minutes / 60) / 24,
+                    date: dayFrac / dim,
+                    month: monthFrac / 12,
+                    year: yearFrac / 10
+                };
+
+                // Either every wheel sits on its own fixed circle, or each one's
+                // radius is its own normalized value -- half past putting the
+                // minute arm at |Gamma| = 0.5.
+                const radiusOf = id => config.normalizedRadius
+                    ? Math.max(0.02, Math.min(1, normal[id]))
+                    : HAND_MAGS[id];
+
                 return {
-                    second: { mag: HAND_MAGS.second, phase: turn(seconds, 60), label: 'S',
+                    second: { mag: radiusOf('second'), normal: normal.second, phase: turn(seconds, 60), label: 'S',
                               value: pad(Math.floor(seconds)) },
-                    minute: { mag: HAND_MAGS.minute, phase: turn(minutes, 60), label: 'M',
+                    minute: { mag: radiusOf('minute'), normal: normal.minute, phase: turn(minutes, 60), label: 'M',
                               value: pad(date.getMinutes()) },
-                    hour:   { mag: HAND_MAGS.hour,   phase: turn(hours12, 12), label: 'H',
+                    hour:   { mag: radiusOf('hour'), normal: normal.hour,   phase: turn(hours12, 12), label: 'H',
                               value: pad((date.getHours() % 12) || 12) },
-                    date:   { mag: HAND_MAGS.date,   phase: turn(dayFrac, dim), label: 'D',
+                    date:   { mag: radiusOf('date'), normal: normal.date,   phase: turn(dayFrac, dim), label: 'D',
                               value: pad(date.getDate()) },
-                    month:  { mag: HAND_MAGS.month,  phase: turn(monthFrac, 12), label: 'MO',
+                    month:  { mag: radiusOf('month'), normal: normal.month,  phase: turn(monthFrac, 12), label: 'MO',
                               value: pad(date.getMonth() + 1) },
-                    year:   { mag: HAND_MAGS.year,   phase: turn(yearFrac, 10), label: 'Y',
+                    year:   { mag: radiusOf('year'), normal: normal.year,   phase: turn(yearFrac, 10), label: 'Y',
                               value: date.getFullYear().toString() }
                 };
             }
@@ -1162,6 +1290,9 @@
             showCalendar: true,
             showRadialScales: true,
             showRimScales: true,
+            showPivotTrace: true,
+            normalizedRadius: false,
+            showTimeLandmarks: true,
             plotPair: 'hour+minute',
             dayPathSampleMinutes: 2,
             colorEngine: 'rf-phasor', // 'date-dna' | 'mood' | 'rf-phasor'
@@ -1245,7 +1376,29 @@
             dayPathCache = null; // the locus is a different curve now
         });
 
+        document.getElementById('chkNormalized').addEventListener('change', e => {
+            config.normalizedRadius = e.target.checked;
+            dayPathCache = null;   // the locus is a different curve now
+            pivotTrace.length = 0; // and so is the pivot's path
+        });
+        document.getElementById('chkLandmarks').addEventListener('change', e => config.showTimeLandmarks = e.target.checked);
+        document.getElementById('chkPivotTrace').addEventListener('change', e => {
+            config.showPivotTrace = e.target.checked;
+            if (!e.target.checked) pivotTrace.length = 0;
+        });
         document.getElementById('chkRimScales').addEventListener('change', e => config.showRimScales = e.target.checked);
+
+        // Build the colour palette: one swatch per moving part, live-editable
+        const paletteHost = document.getElementById('palettePanel');
+        paletteHost.innerHTML = Object.entries(PALETTE).map(([key, entry]) => `
+            <label class="palette-row">
+                <input type="color" data-palette="${key}" value="${entry.value}">
+                <span>${entry.label}</span>
+            </label>`).join('');
+        paletteHost.addEventListener('input', e => {
+            const key = e.target.dataset.palette;
+            if (key) PALETTE[key].value = e.target.value;
+        });
         document.getElementById('chkRadialScales').addEventListener('change', e => {
             config.showRadialScales = e.target.checked;
             resizeCanvas();
@@ -1582,6 +1735,156 @@
             }
         }
 
+        /**
+         * Labels written onto the grid lines themselves, for when the chart is
+         * zoomed in far enough that the real axis and the rim are off screen.
+         *
+         * Each curve is sampled for the visible point nearest the middle of the
+         * view, and the label goes there. Unzoomed this is off: the axis and rim
+         * values are in shot and putting numbers on every curve only adds noise.
+         */
+        function onCurveLabels(R) {
+            if (view.zoom < 1.6) return [];
+
+            const viewCx = cssWidth / 2;
+            const viewCy = stripTop / 2;
+            const margin = 26;
+            const candidates = [];
+
+            // The visible point on a circle that sits nearest the middle of the
+            // view, or null when none of it is on screen.
+            const bestPointOn = (cx, cy, rad, insideUnitCircle) => {
+                if (!isFinite(rad) || rad <= 0) return null;
+                let best = null;
+                let bestD = Infinity;
+                const steps = 120;
+                for (let i = 0; i < steps; i++) {
+                    const a = (i / steps) * 2 * Math.PI;
+                    const x = cx + rad * Math.cos(a);
+                    const y = cy + rad * Math.sin(a);
+                    if (x < margin || x > cssWidth - margin) continue;
+                    if (y < margin || y > stripTop - margin) continue;
+                    if (insideUnitCircle) {
+                        const dx = x - centerX, dy = y - centerY;
+                        if (dx * dx + dy * dy > R * R) continue;
+                    }
+                    const d = (x - viewCx) * (x - viewCx) + (y - viewCy) * (y - viewCy);
+                    if (d < bestD) { bestD = d; best = { x, y }; }
+                }
+                return best;
+            };
+
+            const push = (pt, text, major, color) => {
+                if (!pt) return;
+                candidates.push({
+                    x: pt.x, y: pt.y, text, color,
+                    font: major ? 'bold 9px ui-monospace, monospace' : '8px ui-monospace, monospace'
+                });
+            };
+
+            const resistance = (r, major) => push(
+                bestPointOn(centerX + (r / (1 + r)) * R, centerY, R / (1 + r), false),
+                `r=${r}`, major, major ? '#93c5fd' : '#60a5fa');
+
+            const reactance = (x, major) => push(
+                bestPointOn(centerX + R, centerY - (1 / x) * R, (1 / Math.abs(x)) * R, true),
+                (x > 0 ? '+j' : '-j') + Math.abs(x), major, major ? '#f0abfc' : '#c084fc');
+
+            if (config.showResistance) {
+                GRID_MAJOR.forEach(r => resistance(r, true));
+                GRID_MINOR.forEach(r => resistance(r, false));
+            }
+            if (config.showReactance) {
+                GRID_MAJOR.forEach(x => { reactance(x, true); reactance(-x, true); });
+                GRID_MINOR.forEach(x => { reactance(x, false); reactance(-x, false); });
+            }
+
+            return candidates;
+        }
+
+        /**
+         * The three curves that carry the day, coloured the way the reference
+         * chart colours them.
+         *
+         * Yellow is the real axis: the whole day laid end to end, midnight at the
+         * short circuit on the left, midnight again at the open circuit on the
+         * right, and noon dead centre where the chart is matched. Orange is the
+         * x = +1 arc, walked from the top round to the open circuit and read as
+         * hours 1 to 12; green is the x = -1 arc below it, read as 0 down to -12.
+         * Both arcs converge on the open circuit, which is where the day ends.
+         */
+        function drawTimeLandmarks(R) {
+            if (!config.showTimeLandmarks) return;
+
+            // Gamma with the imaginary axis up, which is how the grid is drawn
+            const at = (re, im) => ({ x: centerX + re * R, y: centerY - im * R });
+
+            ctx.save();
+            ctx.lineCap = 'round';
+
+            // The two unit-reactance arcs. Each is a circle of radius R about
+            // (1, +/-1) in Gamma, swept from its rim point to the open circuit.
+            const arc = (sign, key, labels) => {
+                const cx = centerX + R;
+                const cy = centerY - sign * R;
+                const from = Math.PI;
+                const to = sign > 0 ? -Math.PI / 2 : Math.PI / 2;
+
+                ctx.strokeStyle = paint(key);
+                ctx.lineWidth = 2.2;
+                ctx.globalAlpha = 0.85;
+                ctx.beginPath();
+                for (let i = 0; i <= 96; i++) {
+                    const a = from + (to - from) * (i / 96);
+                    const x = cx + R * Math.cos(a);
+                    const y = cy + R * Math.sin(a);
+                    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+
+                // Hour marks walked along the arc in equal steps
+                ctx.globalAlpha = 1;
+                ctx.font = 'bold 9px ui-monospace, monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                labels.forEach((text, i) => {
+                    const t = i / (labels.length - 1);
+                    const a = from + (to - from) * t;
+                    const x = cx + R * Math.cos(a);
+                    const y = cy + R * Math.sin(a);
+                    const inward = Math.atan2(centerY - y, centerX - x);
+
+                    ctx.fillStyle = paint(key);
+                    ctx.beginPath();
+                    ctx.arc(x, y, 2.6, 0, 2 * Math.PI);
+                    ctx.fill();
+                    ctx.fillText(text, x + 13 * Math.cos(inward), y + 13 * Math.sin(inward));
+                });
+            };
+
+            arc(+1, 'arcMorning', ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12']);
+            arc(-1, 'arcEvening', ['0', '-1', '-2', '-3', '-4', '-5', '-6', '-7', '-8', '-9', '-10', '-11', '-12']);
+
+            // The endpoints the reference chart marks: short, matched, open --
+            // which here are midnight, noon and midnight again.
+            [
+                { pt: at(-1, 0), color: '#ef4444', tag: '00:00' },
+                { pt: at(0, 0), color: '#3b82f6', tag: '12:00' },
+                { pt: at(1, 0), color: '#16a34a', tag: '24:00' }
+            ].forEach(mark => {
+                ctx.fillStyle = mark.color;
+                ctx.beginPath();
+                ctx.arc(mark.pt.x, mark.pt.y, 4.5, 0, 2 * Math.PI);
+                ctx.fill();
+                ctx.font = 'bold 9px ui-monospace, monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(mark.tag, mark.pt.x, mark.pt.y - 12);
+            });
+
+            ctx.restore();
+        }
+
         function drawSmithChartGrid() {
             const R = scaleRadius;
 
@@ -1679,6 +1982,12 @@
             ctx.beginPath();
             ctx.arc(centerX, centerY, 4, 0, 2 * Math.PI);
             ctx.fill();
+
+            // Values written onto the curves themselves, once zoomed in far
+            // enough that the axis and the rim have left the view
+            placeLabels(onCurveLabels(R), 4);
+
+            drawTimeLandmarks(R);
 
             if (config.showRimScales) drawChartRimScales(R);
 
@@ -2048,7 +2357,7 @@
                 const hue = 190 + (sample.minuteOfDay / 1440) * 150; // dawn cyan -> dusk magenta
 
                 if (age < 0) {
-                    ctx.strokeStyle = 'rgba(34, 211, 238, 0.09)';
+                    ctx.strokeStyle = tint('trail', 0.09);
                     ctx.lineWidth = 0.6;
                 } else if (age <= TRAIL_MINUTES) {
                     const freshness = 1 - age / TRAIL_MINUTES;
@@ -2076,7 +2385,7 @@
                 if (sample.minuteOfDay % 60 !== 0 || sample.minuteOfDay === 1440) continue;
                 const p = pt(sample.polar);
                 const elapsed = sample.minuteOfDay <= nowMinutes;
-                ctx.fillStyle = elapsed ? 'rgba(34, 211, 238, 0.55)' : 'rgba(34, 211, 238, 0.14)';
+                ctx.fillStyle = elapsed ? tint('trail', 0.55) : tint('trail', 0.14);
                 ctx.beginPath();
                 ctx.arc(p.x, p.y, sample.minuteOfDay % 360 === 0 ? 2.4 : 1.2, 0, 2 * Math.PI);
                 ctx.fill();
@@ -2330,6 +2639,52 @@
         }
 
         /**
+         * A rolling trace of where the pivot has been.
+         *
+         * The centroid moves as all three anchors move, which is a different
+         * curve from any single wheel and from the interference sum. Samples are
+         * kept in chart coordinates rather than pixels, so the trace stays put
+         * under zoom and pan.
+         */
+        const pivotTrace = [];
+        const PIVOT_TRACE_MAX = 900;
+        let pivotTraceLast = 0;
+
+        function recordPivot(pivot, timestamp) {
+            if (timestamp - pivotTraceLast < 40) return; // ~25 samples a second
+            pivotTraceLast = timestamp;
+            pivotTrace.push({
+                u: (pivot.x - centerX) / scaleRadius,
+                v: (pivot.y - centerY) / scaleRadius
+            });
+            if (pivotTrace.length > PIVOT_TRACE_MAX) pivotTrace.shift();
+        }
+
+        function drawPivotTrace() {
+            if (!config.showPivotTrace || pivotTrace.length < 2) return;
+
+            ctx.save();
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            const n = pivotTrace.length;
+            for (let i = 1; i < n; i++) {
+                const a = pivotTrace[i - 1];
+                const b = pivotTrace[i];
+                const freshness = i / n;
+
+                ctx.strokeStyle = tint('pivotPath', 0.06 + 0.8 * freshness * freshness);
+                ctx.lineWidth = 0.6 + 3.4 * freshness * freshness;
+                ctx.beginPath();
+                ctx.moveTo(centerX + a.u * scaleRadius, centerY + a.v * scaleRadius);
+                ctx.lineTo(centerX + b.u * scaleRadius, centerY + b.v * scaleRadius);
+                ctx.stroke();
+            }
+
+            ctx.restore();
+        }
+
+        /**
          * Draws the solution triangle and the pivot it resolves to.
          */
         function drawPivotTriangle(anchors) {
@@ -2338,7 +2693,7 @@
             ctx.save();
 
             // The triangle itself
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+            ctx.strokeStyle = tint('triangle', 0.75);
             ctx.lineWidth = 1.5;
             ctx.setLineDash([6, 4]);
             ctx.beginPath();
@@ -2349,7 +2704,7 @@
             ctx.stroke();
 
             // Medians, so the centroid reads as a construction rather than a guess
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.28)';
+            ctx.strokeStyle = tint('triangle', 0.28);
             ctx.setLineDash([2, 5]);
             ctx.beginPath();
             [[hour, second, date], [second, date, hour], [date, hour, second]].forEach(([a, b, c]) => {
@@ -2364,9 +2719,9 @@
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             [
-                { pt: hour, color: '#ffffff', tag: 'HR', r: 4.5 },
-                { pt: second, color: '#facc15', tag: 'SEC', r: 3.2 },
-                { pt: date, color: '#10b981', tag: 'DATE', r: 3.2 }
+                { pt: hour, color: paint('triangle'), tag: 'HR', r: 4.5 },
+                { pt: second, color: paint('second'), tag: 'SEC', r: 3.2 },
+                { pt: date, color: paint('date'), tag: 'DATE', r: 3.2 }
             ].forEach(corner => {
                 ctx.fillStyle = corner.color;
                 ctx.beginPath();
@@ -2424,7 +2779,7 @@
             ctx.save();
 
             // Hour ticks along the axis, taller at the quarter days
-            ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
+            ctx.strokeStyle = tint('dayAxis', 0.55);
             ctx.lineWidth = 0.8;
             ctx.beginPath();
             for (let h = 0; h <= 24; h++) {
@@ -2445,7 +2800,7 @@
 
             // Elapsed portion of the day, drawn over the axis
             const dotX = xOfFraction(dayFraction);
-            ctx.strokeStyle = 'rgba(34, 211, 238, 0.85)';
+            ctx.strokeStyle = tint('dayAxis', 0.9);
             ctx.lineWidth = 2.4;
             ctx.beginPath();
             ctx.moveTo(centerX - scaleRadius, axisY);
@@ -2454,7 +2809,7 @@
 
             // The dot itself
             ctx.fillStyle = '#ffffff';
-            ctx.shadowColor = '#22d3ee';
+            ctx.shadowColor = paint('dayAxis');
             ctx.shadowBlur = 12;
             ctx.beginPath();
             ctx.arc(dotX, axisY, 5, 0, 2 * Math.PI);
@@ -2680,6 +3035,55 @@
             return true;
         }
 
+        /**
+         * The time in plain figures, in the band between the chart and the strip.
+         *
+         * The day dot carries a small stamp of its own, but it rides the real
+         * axis and can end up anywhere; this one stays put and stays readable,
+         * including when the chart is zoomed in behind it.
+         */
+        function drawClockReadout(now) {
+            const chartBottom = baseCenterY + baseRadius;
+            const band = stripTop - chartBottom;
+            if (band < 18) return;
+
+            const cx = cssWidth / 2;
+            const cy = chartBottom + band * 0.46;
+
+            const pad = n => n.toString().padStart(2, '0');
+            const hhmmss = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(Math.floor(now.getSeconds()))}`;
+
+            const size = Math.max(14, Math.min(28, band * 0.55));
+
+            ctx.save();
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            // A backing plate, so it survives a zoomed chart, or a rim chip,
+            // landing behind it
+            ctx.font = `bold ${size}px ui-monospace, monospace`;
+            const w = ctx.measureText(hhmmss).width + size * 0.9;
+            const h = size * 1.45;
+            ctx.fillStyle = 'rgba(10, 13, 20, 0.88)';
+            ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            const r = 6, left = cx - w / 2, top = cy - h / 2;
+            ctx.moveTo(left + r, top);
+            ctx.arcTo(left + w, top, left + w, top + h, r);
+            ctx.arcTo(left + w, top + h, left, top + h, r);
+            ctx.arcTo(left, top + h, left, top, r);
+            ctx.arcTo(left, top, left + w, top, r);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = paint('clock');
+            ctx.fillText(hhmmss, cx, cy + 1);
+
+            ctx.restore();
+        }
+
         // Main Animation Frame
         function frame() {
             if (advanceLapse()) {
@@ -2735,6 +3139,8 @@
             const anchors = clockAnchorsOf(now);
             const dayOrigin = anchors.pivot;
             drawDayAxis(now);
+            recordPivot(anchors.pivot, performance.now());
+            drawPivotTrace();
             drawPivotTriangle(anchors);
 
             // 3. Compute Phasor Angles
@@ -2750,9 +3156,9 @@
             const dna = SmithMath.computeDateDNA(now);
             const mood = SmithMath.computeMood(now);
 
-            let hrColor = '#f43f5e';
-            let minColor = '#38bdf8';
-            let secColor = '#facc15';
+            let hrColor = paint('hour');
+            let minColor = paint('minute');
+            let secColor = paint('second');
 
             if (config.colorEngine === 'date-dna') {
                 hrColor = dna.hex;
@@ -2789,7 +3195,7 @@
                 ctx.stroke();
                 ctx.restore();
 
-                drawPhasorVector(compMagNorm, compPhase, '#a855f7', 5.0, 'Σ', dayOrigin);
+                drawPhasorVector(compMagNorm, compPhase, paint('sigma'), 5.0, 'Σ', dayOrigin);
             }
 
             // 5. Draw Clock Hands, deliberately overscaled so they stay legible
@@ -2829,7 +3235,7 @@
             // 6. Calendar wheels: date, month and year, each on its own circle
             if (config.showCalendar) {
                 const hands = SmithMath.handVectors(now);
-                const calColors = { date: '#10b981', month: '#f59e0b', year: '#94a3b8' };
+                const calColors = { date: paint('date'), month: paint('month'), year: paint('year') };
                 ['date', 'month', 'year'].forEach(id => {
                     drawGhostHand(hands[id].mag, hands[id].phase, calColors[id],
                         `${hands[id].label} ${hands[id].value}`);
@@ -2856,6 +3262,8 @@
             drawPivotMark(dayOrigin);
 
             ctx.restore(); // end of the chart's clip
+
+            drawClockReadout(now);
 
             // 7. Mark where the interference sum has actually reached
             drawTimePlot(now, composite);
@@ -2924,9 +3332,33 @@
             dnaHexStr.textContent = `${dna.hex.toUpperCase()} | RGB(${dna.r}, ${dna.g}, ${dna.b})`;
             moodDescStr.textContent = `${mood.season} Season (Hue: ${Math.round(mood.hue)}°, Lum: ${Math.round(mood.lightness)}%)`;
 
+            updateNormalizedPanel(now);
             updateRadialReadout(composite.mag, compGammaRe);
             updateFormulaPanel(now, composite, compGammaRe, compGammaIm);
             updateDayHistory(now, composite);
+        }
+
+        /** Every wheel as a ratio of its own whole, which is already a |Gamma|. */
+        function updateNormalizedPanel(now) {
+            const wheels = SmithMath.handVectors(now);
+            const rows = [
+                { key: 'second', label: 'Seconds / 60' },
+                { key: 'minute', label: 'Minutes / 60' },
+                { key: 'hour', label: 'Hours / 24' },
+                { key: 'date', label: 'Day / month' },
+                { key: 'month', label: 'Month / 12' },
+                { key: 'year', label: 'Year / decade' }
+            ];
+
+            document.getElementById('normalizedPanel').innerHTML = rows.map(row => {
+                const n = wheels[row.key].normal;
+                const vswr = n >= 0.9999 ? '\u221e' : ((1 + n) / (1 - n)).toFixed(2);
+                return `<div class="scale-cell">
+                    <b>${row.label}</b>
+                    <span style="color: ${paint(row.key)}">${n.toFixed(4)}</span>
+                    <b style="text-transform: none;">VSWR ${vswr}</b>
+                </div>`;
+            }).join('');
         }
 
         /**
