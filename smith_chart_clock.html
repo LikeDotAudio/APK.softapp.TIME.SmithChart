@@ -826,9 +826,16 @@
                         <button onclick="resetZoom()">&#9678; Fit</button>
                     </div>
                     <div class="switch-row">
-                        <span>Plotted intersection</span>
+                        <span>Primary intersection</span>
                         <select id="plotPairSelect" style="width: auto; padding: 4px 8px; font-size: 0.75rem;"></select>
                     </div>
+                    <div class="time-slider-row" style="grid-template-columns: 62px minmax(0, 1fr) 62px; margin: 6px 0;">
+                        <span>Trail:</span>
+                        <input type="range" id="sliderTrail" min="15" max="1440" step="15" value="240">
+                        <span id="labelTrail">4h 00m</span>
+                    </div>
+                    <div style="font-size: 0.72rem; color: var(--text-muted); margin: 6px 0 2px;">LOGGED INTERSECTIONS:</div>
+                    <div id="loggedPairs"></div>
                     <div class="switch-row">
                         <span>Interference Sum over Time (24 h)</span>
                         <input type="checkbox" id="chkDayPath" checked>
@@ -984,13 +991,13 @@
          * chart can be asked to correlate whichever two the reader cares about.
          */
         const PLOT_PAIRS = [
-            { id: 'hour+minute',   label: 'Hour × Minute',  a: 'hour',   b: 'minute' },
-            { id: 'hour+second',   label: 'Hour × Second',  a: 'hour',   b: 'second' },
-            { id: 'minute+second', label: 'Minute × Second', a: 'minute', b: 'second' },
-            { id: 'hour+date',     label: 'Hour × Date',    a: 'hour',   b: 'date' },
-            { id: 'minute+date',   label: 'Minute × Date',  a: 'minute', b: 'date' },
-            { id: 'date+month',    label: 'Date × Month',   a: 'date',   b: 'month' },
-            { id: 'month+year',    label: 'Month × Year',   a: 'month',  b: 'year' }
+            { id: 'hour+minute', color: '#22d3ee',   label: 'Hour × Minute',  a: 'hour',   b: 'minute' },
+            { id: 'hour+second', color: '#f472b6',   label: 'Hour × Second',  a: 'hour',   b: 'second' },
+            { id: 'minute+second', color: '#a3e635', label: 'Minute × Second', a: 'minute', b: 'second' },
+            { id: 'hour+date', color: '#fbbf24',     label: 'Hour × Date',    a: 'hour',   b: 'date' },
+            { id: 'minute+date', color: '#818cf8',   label: 'Minute × Date',  a: 'minute', b: 'date' },
+            { id: 'date+month', color: '#2dd4bf',    label: 'Date × Month',   a: 'date',   b: 'month' },
+            { id: 'month+year', color: '#f87171',    label: 'Month × Year',   a: 'month',  b: 'year' }
         ];
 
         /**
@@ -1382,6 +1389,12 @@
             showTimeLandmarks: true,
             showRegions: true,
             plotPair: 'hour+minute',
+            // Every intersection currently being logged. The primary one above
+            // drives the Sigma arm, the parameter cursor and the day history;
+            // the rest are drawn alongside it as their own loci.
+            loggedPairs: ['hour+minute'],
+            // How much of the past each logged trail shows brightly, in minutes.
+            trailMinutes: 240,
             dayPathSampleMinutes: 2,
             colorEngine: 'rf-phasor', // 'date-dna' | 'mood' | 'rf-phasor'
             spiralStartYear: 1900,
@@ -1389,15 +1402,17 @@
         };
 
         // The day path is the same for every frame of a given day, so cache it.
-        let dayPathCache = null;
-        let dayPathCacheKey = '';
-        function getDayPath(date) {
-            const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}-${config.dayPathSampleMinutes}-${config.z0}-${config.plotPair}`;
-            if (!dayPathCache || dayPathCacheKey !== key) {
-                dayPathCache = SmithMath.buildDayPath(date, config.dayPathSampleMinutes);
-                dayPathCacheKey = key;
+        let dayPathCache = new Map();
+        function getDayPath(date, pair) {
+            const pr = pair || plotPair();
+            const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
+                + `-${config.dayPathSampleMinutes}-${config.z0}-${pr.id}-${config.normalizedRadius}`;
+            let hit = dayPathCache.get(pr.id);
+            if (!hit || hit.key !== key) {
+                hit = { key, path: SmithMath.buildDayPath(date, config.dayPathSampleMinutes, pr) };
+                dayPathCache.set(pr.id, hit);
             }
-            return dayPathCache;
+            return hit.path;
         }
 
         // DOM Elements
@@ -1462,9 +1477,40 @@
                 .join('') + '<option value="none">\u2192 (unassigned)</option>';
             select.addEventListener('change', e => {
                 fieldToWheel[field] = e.target.value;
-                dayPathCache = null;
+                dayPathCache.clear();
                 pivotTrace.length = 0;
             });
+        });
+
+        // How far back every logged trail reaches
+        const sliderTrail = document.getElementById('sliderTrail');
+        const labelTrail = document.getElementById('labelTrail');
+        const showTrailLength = () => {
+            const m = config.trailMinutes;
+            labelTrail.textContent = m >= 60
+                ? `${Math.floor(m / 60)}h ${(m % 60).toString().padStart(2, '0')}m`
+                : `${m}m`;
+        };
+        sliderTrail.addEventListener('input', e => {
+            config.trailMinutes = parseInt(e.target.value, 10);
+            showTrailLength();
+        });
+        showTrailLength();
+
+        // Which intersections are being logged, each in its own colour
+        const loggedHost = document.getElementById('loggedPairs');
+        loggedHost.innerHTML = PLOT_PAIRS.map(pr => `
+            <label class="palette-row">
+                <input type="checkbox" data-pair="${pr.id}"${config.loggedPairs.includes(pr.id) ? ' checked' : ''}>
+                <span style="display:inline-block;width:14px;height:8px;border-radius:2px;background:${pr.color}"></span>
+                <span>${pr.label}</span>
+            </label>`).join('');
+        loggedHost.addEventListener('change', e => {
+            const id = e.target.dataset.pair;
+            if (!id) return;
+            const at = config.loggedPairs.indexOf(id);
+            if (e.target.checked && at === -1) config.loggedPairs.push(id);
+            if (!e.target.checked && at !== -1) config.loggedPairs.splice(at, 1);
         });
 
         // Populate and wire the plotted-intersection selector
@@ -1474,12 +1520,17 @@
             .join('');
         plotPairSelect.addEventListener('change', e => {
             config.plotPair = e.target.value;
-            dayPathCache = null; // the locus is a different curve now
+            if (!config.loggedPairs.includes(e.target.value)) {
+                config.loggedPairs.push(e.target.value);
+                const box = loggedHost.querySelector(`[data-pair="${e.target.value}"]`);
+                if (box) box.checked = true;
+            }
+            dayPathCache.clear(); // the locus is a different curve now
         });
 
         document.getElementById('chkNormalized').addEventListener('change', e => {
             config.normalizedRadius = e.target.checked;
-            dayPathCache = null;   // the locus is a different curve now
+            dayPathCache.clear();   // the locus is a different curve now
             pivotTrace.length = 0; // and so is the pivot's path
         });
         document.getElementById('chkRegions').addEventListener('change', e => config.showRegions = e.target.checked);
@@ -2474,7 +2525,15 @@
          * the rest of the day is a faint preview.
          */
         function drawDayPath(now) {
-            const path = getDayPath(now);
+            // The secondary loci first, so the primary trail lands on top of them
+            const primary = plotPair();
+            for (const id of config.loggedPairs) {
+                if (id === primary.id) continue;
+                const pair = PLOT_PAIRS.find(pr => pr.id === id);
+                if (pair) drawSecondaryLocus(now, pair);
+            }
+
+            const path = getDayPath(now, primary);
             const nowMinutes = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
             const pt = polar => SmithMath.polarToCartesian(polar.mag, polar.phase, centerX, centerY, scaleRadius);
 
@@ -2500,7 +2559,7 @@
             // The trail comes in fat and bright at the current moment and tapers
             // away behind it; the rest of the day stays as a thin history line so
             // the whole locus is still readable underneath.
-            const TRAIL_MINUTES = 240;
+            const TRAIL_MINUTES = config.trailMinutes;
             let prev = pt(path.samples[0].polar);
             for (let i = 1; i < path.samples.length; i++) {
                 const sample = path.samples[i];
@@ -2552,6 +2611,65 @@
                 ctx.arc(p.x, p.y, 4.5, 0, 2 * Math.PI);
                 ctx.stroke();
             });
+
+            ctx.restore();
+        }
+
+        /**
+         * One of the other logged intersections: the whole day as a thin line in
+         * the pair's own colour, with the moment it has reached picked out.
+         */
+        function drawSecondaryLocus(now, pair) {
+            const path = getDayPath(now, pair);
+            const nowMinutes = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
+            const pt = polar => SmithMath.polarToCartesian(polar.mag, polar.phase, centerX, centerY, scaleRadius);
+
+            ctx.save();
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = pair.color;
+
+            // Same shape of trail as the primary, in this pair's own colour:
+            // bright at the head, tapering back over the trail length, and the
+            // rest of the day left as a thin line underneath.
+            const trail = config.trailMinutes;
+            let prev = pt(path.samples[0].polar);
+            for (let i = 1; i < path.samples.length; i++) {
+                const sample = path.samples[i];
+                const p = pt(sample.polar);
+                const age = nowMinutes - sample.minuteOfDay;
+
+                if (age < 0) {
+                    ctx.globalAlpha = 0.07;
+                    ctx.lineWidth = 0.6;
+                } else if (age <= trail) {
+                    const weight = Math.pow(1 - age / trail, 3);
+                    ctx.globalAlpha = 0.1 + 0.75 * weight;
+                    ctx.lineWidth = 0.6 + 4.5 * weight;
+                } else {
+                    ctx.globalAlpha = 0.16;
+                    ctx.lineWidth = 0.7;
+                }
+
+                ctx.beginPath();
+                ctx.moveTo(prev.x, prev.y);
+                ctx.lineTo(p.x, p.y);
+                ctx.stroke();
+                prev = p;
+            }
+
+            // Where this pair stands right now
+            const head = pt(SmithMath.compositePolar(now, pair));
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = pair.color;
+            ctx.beginPath();
+            ctx.arc(head.x, head.y, 3.4, 0, 2 * Math.PI);
+            ctx.fill();
+
+            ctx.font = 'bold 8px ui-monospace, monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(pair.label, head.x, head.y - 6);
 
             ctx.restore();
         }
