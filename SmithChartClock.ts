@@ -26,13 +26,48 @@ export interface ImpedanceMetrics {
     gamma: ComplexNumber;       // Reflection coefficient Gamma = re + j*im
     gammaMag: number;           // |Gamma| (0 to 1)
     gammaPhaseDeg: number;      // Angle in degrees (-180 to +180)
-    zNorm: ComplexNumber;       // Normalized impedance z = r + jx
+    zNorm: ComplexNumber;       // Normalized impedance z = Z/Z0 = r + jx
     zActual: ComplexNumber;     // Actual impedance Z = R + jX (Ohms)
+    yNorm: ComplexNumber;       // Normalized admittance y = Y/Y0 = 1/z = g + jb
+    yActual: ComplexNumber;     // Actual admittance Y = G + jB (Siemens)
     vswr: number;               // Voltage Standing Wave Ratio (1 to Infinity)
     returnLossDb: number;       // Return loss in dB (-20 * log10(|Gamma|))
-    mismatchLossDb: number;     // Mismatch loss in dB
+    mismatchLossDb: number;     // Mismatch (reflection) loss in dB
+    transmCoeffP: number;       // Power transmission coefficient 1 - |Gamma|^2
+    transmCoeffE: number;       // Voltage transmission coefficient |1 + Gamma| (0 to 2)
+    swLossCoeff: number;        // Standing wave loss coefficient (1 + |G|^2)/(1 - |G|^2)
+    swPeakConstP: number;       // Standing wave peak, constant P: sqrt((1+|G|)/(1-|G|))
     interferencePhaseDeg: number; // Phase difference between hands
     interferenceRatio: number;  // Normalized constructive/destructive factor (0 to 2)
+}
+
+/** One sample of the 24-hour "path of the day" traced by the clock hands. */
+export interface DayPathSample {
+    minuteOfDay: number;        // 0 .. 1439
+    hours: number;              // fractional hours since local midnight
+    date: Date;
+    polar: PolarCoordinate;     // composite reflection coefficient, polar form
+    gamma: ComplexNumber;       // composite reflection coefficient, cartesian form
+    zNorm: ComplexNumber;       // normalized impedance z = (1 + G)/(1 - G)
+    yNorm: ComplexNumber;       // normalized admittance y = 1/z = (1 - G)/(1 + G)
+    vswr: number;
+    returnLossDb: number;
+}
+
+export interface DayPathSummary {
+    samples: DayPathSample[];
+    bestMatch: DayPathSample;   // lowest |Gamma| of the day
+    worstMatch: DayPathSample;  // highest |Gamma| of the day
+    dayStart: Date;
+}
+
+/** The full set of clock hands, slowest wheel nearest the matched centre. */
+export interface HandVector {
+    id: 'second' | 'minute' | 'hour' | 'date' | 'month' | 'year';
+    label: string;
+    polar: PolarCoordinate;
+    /** Human readable description of what one revolution means. */
+    period: string;
 }
 
 export interface DateDNA {
@@ -59,12 +94,35 @@ export interface SmithChartClockOptions {
     showCompositeVector?: boolean;
     showReactanceArcs?: boolean;
     showResistanceCircles?: boolean;
+    /** Date-DNA spiral. Off by default -- it is decorative, not an RF reading. */
     showHistoricalSpiral?: boolean;
     showAngleScale?: boolean;
+    /** Calendar wheels: date-of-month, month-of-year and year-of-decade hands. */
+    showCalendarHands?: boolean;
+    /** Constant-VSWR circles: radius |Gamma|, centred on the origin. */
+    showVswrCircles?: boolean;
+    /** The 24-hour locus traced by the composite hour+minute phasor. */
+    showDayPath?: boolean;
+    /** Mirror of the day path through the origin (y = 1/z lives at -Gamma). */
+    showAdmittancePath?: boolean;
+    /** Classic "RADIALLY SCALED PARAMETERS" nomograph beneath the chart. */
+    showRadialScales?: boolean;
+    /** Minutes between day-path samples. 1 = every minute (1440 points). */
+    dayPathSampleMinutes?: number;
     spiralStartYear?: number;
     spiralEndYear?: number;
     colorEngine?: 'date-dna' | 'mood' | 'rf-phasor' | 'custom';
 }
+
+/** Magnitudes of each wheel. Slower wheels sit closer to the matched centre. */
+export const HAND_MAGNITUDES = {
+    minute: 0.95,
+    second: 0.85,
+    hour: 0.60,
+    date: 0.45,
+    month: 0.30,
+    year: 0.18
+} as const;
 
 /**
  * RF Mathematics Engine for Smith Chart Computations
@@ -119,6 +177,31 @@ export class SmithChartRFMath {
     }
 
     /**
+     * Transforms Gamma into Normalized Admittance y = 1/z = (1 - Gamma) / (1 + Gamma)
+     * The admittance point is the impedance point rotated 180 deg about the origin.
+     */
+    public static gammaToNormalizedAdmittance(gamma: ComplexNumber): ComplexNumber {
+        const denom = (1 + gamma.re) * (1 + gamma.re) + (gamma.im * gamma.im);
+        if (denom < 1e-7) {
+            // Singularity at Gamma = (-1, 0) -> Short Circuit -> infinite admittance
+            return { re: Infinity, im: Infinity };
+        }
+        const g = (1 - (gamma.re * gamma.re) - (gamma.im * gamma.im)) / denom;
+        const b = (-2 * gamma.im) / denom;
+        return { re: Math.max(0, g), im: b };
+    }
+
+    /**
+     * Reciprocal of a complex number, used for y = 1/z when z is finite.
+     */
+    public static reciprocal(z: ComplexNumber): ComplexNumber {
+        if (!isFinite(z.re) || !isFinite(z.im)) return { re: 0, im: 0 };
+        const denom = (z.re * z.re) + (z.im * z.im);
+        if (denom < 1e-12) return { re: Infinity, im: Infinity };
+        return { re: z.re / denom, im: -z.im / denom };
+    }
+
+    /**
      * Calculates complete impedance metrics from a polar coordinate point
      */
     public static computeMetrics(
@@ -139,6 +222,13 @@ export class SmithChartRFMath {
             im: isFinite(zNorm.im) ? zNorm.im * z0 : Infinity
         };
 
+        // y = Y/Y0 = 1/z = g + jb, sitting diametrically opposite z on the chart
+        const yNorm = this.gammaToNormalizedAdmittance(gamma);
+        const yActual: ComplexNumber = {
+            re: isFinite(yNorm.re) ? yNorm.re / z0 : Infinity,
+            im: isFinite(yNorm.im) ? yNorm.im / z0 : Infinity
+        };
+
         // VSWR = (1 + |Gamma|) / (1 - |Gamma|)
         let vswr = 1.0;
         if (gammaMag >= 0.9999) {
@@ -153,7 +243,7 @@ export class SmithChartRFMath {
             returnLossDb = -20 * Math.log10(gammaMag);
         }
 
-        // Mismatch Loss = -10 * log10(1 - |Gamma|^2)
+        // Reflection (mismatch) Loss = -10 * log10(1 - |Gamma|^2)
         let mismatchLossDb = 0;
         const powerTransmission = 1 - (gammaMag * gammaMag);
         if (powerTransmission > 1e-5) {
@@ -161,6 +251,18 @@ export class SmithChartRFMath {
         } else {
             mismatchLossDb = Infinity;
         }
+
+        // Remaining radially scaled parameters (the nomograph beneath the chart)
+        const transmCoeffP = Math.max(0, powerTransmission);
+        const transmCoeffE = Math.sqrt(
+            (1 + gamma.re) * (1 + gamma.re) + (gamma.im * gamma.im)
+        );
+        const swLossCoeff = powerTransmission > 1e-5
+            ? (1 + gammaMag * gammaMag) / powerTransmission
+            : Infinity;
+        const swPeakConstP = gammaMag < 0.9999
+            ? Math.sqrt((1 + gammaMag) / (1 - gammaMag))
+            : Infinity;
 
         // Phase difference and interference ratio with another hand (e.g. Hour hand)
         let interferencePhaseDeg = 0;
@@ -181,12 +283,157 @@ export class SmithChartRFMath {
             gammaPhaseDeg,
             zNorm,
             zActual,
+            yNorm,
+            yActual,
             vswr,
             returnLossDb,
             mismatchLossDb,
+            transmCoeffP,
+            transmCoeffE,
+            swLossCoeff,
+            swPeakConstP,
             interferencePhaseDeg,
             interferenceRatio
         };
+    }
+
+    /**
+     * Days in the given month (1-based month index is taken from the Date).
+     */
+    public static daysInMonth(date: Date): number {
+        return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+    }
+
+    /**
+     * Days in the given year (365 or 366).
+     */
+    public static daysInYear(date: Date): number {
+        const y = date.getFullYear();
+        return ((y % 4 === 0 && y % 100 !== 0) || y % 400 === 0) ? 366 : 365;
+    }
+
+    /**
+     * Fractional day-of-year, 0 at midnight on Jan 1.
+     */
+    public static dayOfYear(date: Date): number {
+        const start = new Date(date.getFullYear(), 0, 1);
+        return (date.getTime() - start.getTime()) / 86400000;
+    }
+
+    /**
+     * Every clock wheel as a phasor on the chart.
+     *
+     * Each wheel turns once per its own period and rides its own constant-VSWR
+     * circle: the faster the wheel, the further from the matched centre it sits.
+     * Twelve o'clock is straight up, so every phase is offset by -PI/2.
+     */
+    public static handVectorsForTime(date: Date): HandVector[] {
+        const ms = date.getMilliseconds();
+        const seconds = date.getSeconds() + ms / 1000;
+        const minutes = date.getMinutes() + seconds / 60;
+        const hours12 = (date.getHours() % 12) + minutes / 60;
+
+        const dim = this.daysInMonth(date);
+        const dayFrac = (date.getDate() - 1) + (date.getHours() + minutes / 60) / 24;
+        const monthFrac = date.getMonth() + dayFrac / dim;
+        const yearFrac = (date.getFullYear() % 10) + this.dayOfYear(date) / this.daysInYear(date);
+
+        const turn = (fraction: number, whole: number): number =>
+            (fraction / whole) * (2 * Math.PI) - (Math.PI / 2);
+
+        return [
+            {
+                id: 'second', label: 'S', period: '60 s per revolution',
+                polar: { magnitude: HAND_MAGNITUDES.second, phase: turn(seconds, 60) }
+            },
+            {
+                id: 'minute', label: 'M', period: '60 min per revolution',
+                polar: { magnitude: HAND_MAGNITUDES.minute, phase: turn(minutes, 60) }
+            },
+            {
+                id: 'hour', label: 'H', period: '12 h per revolution',
+                polar: { magnitude: HAND_MAGNITUDES.hour, phase: turn(hours12, 12) }
+            },
+            {
+                id: 'date', label: 'D', period: 'one month per revolution',
+                polar: { magnitude: HAND_MAGNITUDES.date, phase: turn(dayFrac, dim) }
+            },
+            {
+                id: 'month', label: 'MO', period: 'one year per revolution',
+                polar: { magnitude: HAND_MAGNITUDES.month, phase: turn(monthFrac, 12) }
+            },
+            {
+                id: 'year', label: 'Y', period: 'one decade per revolution',
+                polar: { magnitude: HAND_MAGNITUDES.year, phase: turn(yearFrac, 10) }
+            }
+        ];
+    }
+
+    /**
+     * The composite reflection coefficient: the vector sum of the hour and
+     * minute phasors, renormalised so the pair can never leave the unit circle.
+     *
+     * This single point is what the day path traces, what the radially scaled
+     * parameter cursor reads, and what the live formula panel substitutes into.
+     */
+    public static compositePolarForTime(date: Date): PolarCoordinate {
+        const seconds = date.getSeconds() + date.getMilliseconds() / 1000;
+        const minutes = date.getMinutes() + seconds / 60;
+        const hours12 = (date.getHours() % 12) + minutes / 60;
+
+        const minPhase = (minutes / 60) * (2 * Math.PI) - (Math.PI / 2);
+        const hrPhase = (hours12 / 12) * (2 * Math.PI) - (Math.PI / 2);
+
+        const sumRe = HAND_MAGNITUDES.minute * Math.cos(minPhase) + HAND_MAGNITUDES.hour * Math.cos(hrPhase);
+        const sumIm = HAND_MAGNITUDES.minute * Math.sin(minPhase) + HAND_MAGNITUDES.hour * Math.sin(hrPhase);
+
+        const norm = HAND_MAGNITUDES.minute + HAND_MAGNITUDES.hour; // 1.55, the reachable maximum
+        return {
+            magnitude: Math.min(1.0, Math.sqrt(sumRe * sumRe + sumIm * sumIm) / norm),
+            phase: Math.atan2(sumIm, sumRe)
+        };
+    }
+
+    /**
+     * A full day of normalization and reflection, read off the clock arms.
+     *
+     * Walks local midnight to midnight, and at every sample converts the hour +
+     * minute arm positions into Gamma, then into z = (1+G)/(1-G), y = 1/z and
+     * VSWR = (1+|G|)/(1-|G|). The result is the locus the clock draws over 24 h.
+     */
+    public static buildDayPath(date: Date, sampleMinutes: number = 2): DayPathSummary {
+        const step = Math.max(1, Math.min(60, Math.round(sampleMinutes)));
+        const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+
+        const samples: DayPathSample[] = [];
+        let bestMatch: DayPathSample | null = null;
+        let worstMatch: DayPathSample | null = null;
+
+        for (let minuteOfDay = 0; minuteOfDay <= 1440; minuteOfDay += step) {
+            const m = Math.min(1440, minuteOfDay);
+            const stamp = new Date(dayStart.getTime() + m * 60000);
+            const polar = this.compositePolarForTime(stamp);
+            const gamma = this.polarToGamma(polar);
+            const rho = polar.magnitude;
+
+            const sample: DayPathSample = {
+                minuteOfDay: m,
+                hours: m / 60,
+                date: stamp,
+                polar,
+                gamma,
+                zNorm: this.gammaToNormalizedImpedance(gamma),
+                yNorm: this.gammaToNormalizedAdmittance(gamma),
+                vswr: rho >= 0.9999 ? Infinity : (1 + rho) / (1 - rho),
+                returnLossDb: rho > 1e-5 ? -20 * Math.log10(rho) : Infinity
+            };
+            samples.push(sample);
+
+            if (!bestMatch || rho < bestMatch.polar.magnitude) bestMatch = sample;
+            if (!worstMatch || rho > worstMatch.polar.magnitude) worstMatch = sample;
+        }
+
+        return { samples, bestMatch: bestMatch!, worstMatch: worstMatch!, dayStart };
     }
 
     /**
@@ -252,6 +499,128 @@ export class SmithChartRFMath {
             solarLightness
         };
     }
+}
+
+/**
+ * One ruler of the classic "RADIALLY SCALED PARAMETERS" nomograph.
+ *
+ * Every ruler on that strip is plotted against the same radial distance
+ * rho = |Gamma|: rho = 1 at the outer rim of the chart, rho = 0 at the matched
+ * centre. A ruler is therefore fully described by the pair of functions that
+ * convert between its printed value and that radius.
+ */
+export interface RadialScaleDef {
+    id: string;
+    row: number;                        // 0 = top ruler
+    side: 'left' | 'right' | 'full';    // which half of the strip it occupies
+    label: string;                      // the diagonal end label
+    formula: string;                    // shown in the live readout / tooltips
+    /** printed value -> rho in [0, 1] */
+    rhoOf: (value: number) => number;
+    /** rho in [0, 1] -> printed value */
+    valueOf: (rho: number) => number;
+    /** printed ticks, ordered from the outer rim inwards */
+    ticks: number[];
+    /** decimal places for the live cursor readout */
+    precision: number;
+}
+
+const INF = Infinity;
+
+/** rho from SWR, and back. */
+const rhoFromSwr = (swr: number): number => (swr === INF ? 1 : (swr - 1) / (swr + 1));
+const swrFromRho = (rho: number): number => (rho >= 0.9999 ? INF : (1 + rho) / (1 - rho));
+
+/**
+ * The six rulers of the standard chart, top to bottom.
+ *
+ * Left half runs rho = 1 at the far left to rho = 0 at CENTER and carries the
+ * reflection-side parameters; the right half runs rho = 0 at CENTER back out to
+ * rho = 1 and carries the transmission-side parameters. The bottom ruler spans
+ * the whole width because it is linear in Gamma itself, not in |Gamma|.
+ */
+export const RADIAL_SCALES: RadialScaleDef[] = [
+    {
+        id: 'swr', row: 0, side: 'left', label: 'SWR', formula: 'SWR = (1 + |\u0393|) / (1 - |\u0393|)',
+        rhoOf: rhoFromSwr, valueOf: swrFromRho, precision: 2,
+        ticks: [INF, 100, 40, 20, 10, 5, 4, 3, 2.5, 2, 1.8, 1.6, 1.4, 1.2, 1.1, 1]
+    },
+    {
+        id: 'dbs', row: 1, side: 'left', label: 'dBS', formula: 'dBS = 20\u00b7log\u2081\u2080(SWR)',
+        rhoOf: (d) => (d === INF ? 1 : rhoFromSwr(Math.pow(10, d / 20))),
+        valueOf: (rho) => (rho >= 0.9999 ? INF : 20 * Math.log10(swrFromRho(rho))),
+        precision: 2,
+        ticks: [INF, 40, 30, 20, 15, 10, 8, 6, 5, 4, 3, 2, 1, 0]
+    },
+    {
+        id: 'rtnLoss', row: 2, side: 'left', label: 'RTN. LOSS [dB]', formula: 'RL = -20\u00b7log\u2081\u2080|\u0393|',
+        rhoOf: (l) => (l === INF ? 0 : Math.pow(10, -l / 20)),
+        valueOf: (rho) => (rho > 1e-5 ? -20 * Math.log10(rho) : INF),
+        precision: 2,
+        ticks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 20, 30, INF]
+    },
+    {
+        id: 'rflCoeffE', row: 3, side: 'left', label: 'RFL. COEFF. E or I', formula: '|\u0393| = (SWR - 1)/(SWR + 1)',
+        rhoOf: (v) => v, valueOf: (rho) => rho, precision: 3,
+        ticks: [1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05, 0.01, 0]
+    },
+    {
+        id: 'rflCoeffP', row: 4, side: 'left', label: 'RFL. COEFF. P', formula: '|\u0393|\u00b2 = reflected / incident power',
+        rhoOf: (v) => Math.sqrt(Math.max(0, v)), valueOf: (rho) => rho * rho, precision: 3,
+        ticks: [1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0]
+    },
+
+    {
+        id: 'atten', row: 0, side: 'right', label: 'ATTEN. [dB]', formula: 'A = -10\u00b7log\u2081\u2080|\u0393|  (1 dB steps of line loss)',
+        rhoOf: (a) => (a === INF ? 0 : Math.pow(10, -a / 10)),
+        valueOf: (rho) => (rho > 1e-5 ? -10 * Math.log10(rho) : INF),
+        precision: 2,
+        ticks: [1, 2, 3, 4, 5, 7, 10, 15]
+    },
+    {
+        id: 'swLossCoeff', row: 1, side: 'right', label: 'S.W. LOSS COEFF', formula: '(1 + |\u0393|\u00b2) / (1 - |\u0393|\u00b2)',
+        rhoOf: (c) => (c === INF ? 1 : Math.sqrt(Math.max(0, (c - 1) / (c + 1)))),
+        valueOf: (rho) => (rho >= 0.9999 ? INF : (1 + rho * rho) / (1 - rho * rho)),
+        precision: 3,
+        ticks: [1, 1.1, 1.2, 1.3, 1.4, 1.6, 1.8, 2, 3, 4, 5, 10, 20, INF]
+    },
+    {
+        id: 'rflLoss', row: 2, side: 'right', label: 'RFL. LOSS [dB]', formula: 'ML = -10\u00b7log\u2081\u2080(1 - |\u0393|\u00b2)',
+        rhoOf: (l) => (l === INF ? 1 : Math.sqrt(Math.max(0, 1 - Math.pow(10, -l / 10)))),
+        valueOf: (rho) => (rho >= 0.9999 ? INF : -10 * Math.log10(1 - rho * rho)),
+        precision: 3,
+        ticks: [0, 0.1, 0.2, 0.4, 0.6, 0.8, 1, 1.5, 2, 3, 4, 5, 6, 10, 15, INF]
+    },
+    {
+        id: 'swPeak', row: 3, side: 'right', label: 'S.W. PEAK (CONST. P)', formula: '\u221a((1 + |\u0393|) / (1 - |\u0393|))',
+        rhoOf: (p) => (p === INF ? 1 : (p * p - 1) / (p * p + 1)),
+        valueOf: (rho) => (rho >= 0.9999 ? INF : Math.sqrt((1 + rho) / (1 - rho))),
+        precision: 3,
+        ticks: [1, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2, 2.5, 3, 4, 5, 10, INF]
+    },
+    {
+        id: 'transmP', row: 4, side: 'right', label: 'TRANSM. COEFF. P', formula: '1 - |\u0393|\u00b2 = transmitted / incident power',
+        rhoOf: (t) => Math.sqrt(Math.max(0, 1 - t)), valueOf: (rho) => 1 - rho * rho, precision: 3,
+        ticks: [1, 0.99, 0.95, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0]
+    },
+
+    {
+        id: 'transmE', row: 5, side: 'full', label: 'TRANSM. COEFF. E or I', formula: '\u03c4 = 1 + \u0393   (0 at the short, 2 at the open)',
+        // Linear in Gamma, so the ruler spans the full width: 0 at ORIGIN, 1 at
+        // CENTER, 2 at the far right. Positions are handled by the renderer.
+        rhoOf: (v) => Math.abs(v - 1), valueOf: (rho) => 1 + rho, precision: 3,
+        ticks: [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1,
+                1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2]
+    }
+];
+
+/**
+ * Formats a scale value for printing, collapsing Infinity to the usual glyph.
+ */
+export function formatScaleValue(v: number, precision: number = 2): string {
+    if (!isFinite(v)) return '\u221e';
+    if (Number.isInteger(v)) return v.toString();
+    return parseFloat(v.toFixed(precision)).toString();
 }
 
 /**
