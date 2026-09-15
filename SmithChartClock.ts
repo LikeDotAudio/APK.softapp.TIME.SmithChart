@@ -705,6 +705,19 @@ export class SmithChartClock {
     private stripTop: number = 0;
     private stripHeight: number = 0;
 
+    // Where the chart would sit unzoomed. The parameter strip stays pinned to
+    // these, so only the chart itself moves under zoom and pan.
+    private baseCenterX: number = 0;
+    private baseCenterY: number = 0;
+    private baseRadius: number = 0;
+
+    // Zoom magnifies the chart radius rather than applying a canvas transform,
+    // so line widths and type stay at their natural pixel size and the fine
+    // gradations become readable as they spread apart.
+    private view = { zoom: 1, panX: 0, panY: 0 };
+    private static readonly MAX_ZOOM = 24;
+    private dragFrom: { x: number; y: number; panX: number; panY: number } | null = null;
+
     // Rim readings pending placement for this frame
     private rimReadings: Array<{ phase: number; color: string; text: string }> = [];
 
@@ -773,6 +786,11 @@ export class SmithChartClock {
 
         this.resize();
         window.addEventListener('resize', this.onWindowResize);
+        this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
+        this.canvas.addEventListener('mousedown', this.onPointerDown);
+        this.canvas.addEventListener('mousemove', this.onPointerMove);
+        this.canvas.addEventListener('dblclick', this.onDoubleClick);
+        window.addEventListener('mouseup', this.onPointerUp);
     }
 
     private onWindowResize = (): void => {
@@ -803,11 +821,114 @@ export class SmithChartClock {
         this.stripTop = height - this.stripHeight;
 
         const chartHeight = height - this.stripHeight;
-        this.centerX = width / 2;
-        this.centerY = chartHeight / 2;
+        this.baseCenterX = width / 2;
+        this.baseCenterY = chartHeight / 2;
         // Outside the rim sit the dial numbers and, beyond them, the value each
         // ghost line is reading. Both need clearance.
-        this.scaleRadius = Math.max(10, Math.min(width / 2, chartHeight / 2) - 52);
+        this.baseRadius = Math.max(10, Math.min(width / 2, chartHeight / 2) - 52);
+        this.applyView();
+    }
+
+    /** Folds the current zoom and pan into the geometry the renderers use. */
+    private applyView(): void {
+        this.centerX = this.baseCenterX + this.view.panX;
+        this.centerY = this.baseCenterY + this.view.panY;
+        this.scaleRadius = this.baseRadius * this.view.zoom;
+    }
+
+    /** Current magnification, 1 being the whole chart. */
+    public getZoom(): number {
+        return this.view.zoom;
+    }
+
+    /** Zooms about a point on the canvas, keeping whatever is under it still. */
+    public zoomAbout(px: number, py: number, factor: number): void {
+        const previous = this.view.zoom;
+        const next = Math.min(SmithChartClock.MAX_ZOOM, Math.max(1, previous * factor));
+        if (next === previous) return;
+
+        const k = next / previous;
+        this.view.panX = px - k * (px - this.centerX) - this.baseCenterX;
+        this.view.panY = py - k * (py - this.centerY) - this.baseCenterY;
+        this.view.zoom = next;
+        this.applyView();
+    }
+
+    /** Returns the chart to the whole-view framing. */
+    public resetView(): void {
+        this.view = { zoom: 1, panX: 0, panY: 0 };
+        this.applyView();
+    }
+
+    private onWheel = (e: WheelEvent): void => {
+        e.preventDefault();
+        const rect = this.canvas.getBoundingClientRect();
+        // A small step, so the fine gradations can be crept up on
+        this.zoomAbout(e.clientX - rect.left, e.clientY - rect.top, Math.exp(-e.deltaY * 0.0012));
+    };
+
+    private onPointerDown = (e: MouseEvent): void => {
+        const rect = this.canvas.getBoundingClientRect();
+        this.dragFrom = {
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top,
+            panX: this.view.panX,
+            panY: this.view.panY
+        };
+    };
+
+    private onPointerMove = (e: MouseEvent): void => {
+        if (!this.dragFrom) return;
+        const rect = this.canvas.getBoundingClientRect();
+        this.view.panX = this.dragFrom.panX + (e.clientX - rect.left - this.dragFrom.x);
+        this.view.panY = this.dragFrom.panY + (e.clientY - rect.top - this.dragFrom.y);
+        this.applyView();
+    };
+
+    private onPointerUp = (): void => {
+        this.dragFrom = null;
+    };
+
+    private onDoubleClick = (): void => {
+        this.resetView();
+    };
+
+    /**
+     * Prints as many of the candidate labels as will actually fit.
+     *
+     * Every gradation offers a label; which ones survive is decided by whether
+     * they collide with one already down. That is what makes the chart densify
+     * as it is zoomed: the same candidates spread apart, so more get through.
+     * Feed majors before minors, because earlier candidates win.
+     */
+    private placeLabels(
+        candidates: Array<{ x: number; y: number; text: string; color: string; font: string }>,
+        pad: number = 3
+    ): void {
+        const ctx = this.ctx;
+        const width = this.canvas.width / this.dpr;
+        const placed: Array<{ x: number; y: number; w: number; h: number }> = [];
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        for (const item of candidates) {
+            if (item.x < -40 || item.x > width + 40) continue;
+            if (item.y < -20 || item.y > this.stripTop + 20) continue;
+
+            ctx.font = item.font;
+            const w = ctx.measureText(item.text).width + pad * 2;
+            const h = 9 + pad;
+
+            const clash = placed.some(q =>
+                Math.abs(item.x - q.x) < (w + q.w) / 2 &&
+                Math.abs(item.y - q.y) < (h + q.h) / 2);
+            if (clash) continue;
+
+            placed.push({ x: item.x, y: item.y, w, h });
+            ctx.fillStyle = item.color;
+            ctx.fillText(item.text, item.x, item.y);
+        }
     }
 
     /**
@@ -932,10 +1053,6 @@ export class SmithChartClock {
         const ctx = this.ctx;
         const R = this.scaleRadius;
 
-        // Clear canvas
-        ctx.fillStyle = colors.background;
-        ctx.fillRect(0, 0, this.canvas.width / this.dpr, this.canvas.height / this.dpr);
-
         // 1. Draw Outer Boundary (Gamma = 1.0, |Gamma| = 1 Circle)
         ctx.strokeStyle = colors.outerCircle;
         ctx.lineWidth = 2.0;
@@ -966,15 +1083,20 @@ export class SmithChartClock {
             SmithChartClock.GRID_MAJOR.forEach(r =>
                 drawR(r, r === 1.0 ? colors.gridMajor : colors.gridMinor, r === 1.0 ? 1.3 : 0.75));
 
-            // Printed values, sitting on the real axis
-            ctx.fillStyle = colors.text;
-            ctx.font = '7px ui-monospace, monospace';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'bottom';
-            SmithChartClock.R_LABELLED.forEach(r => {
-                const labelX = this.centerX + ((r - 1) / (r + 1)) * R;
-                if (labelX < this.centerX + R - 12) ctx.fillText(r.toString(), labelX, this.centerY - 3);
+            // Printed values on the real axis. Majors are offered first so they
+            // win the collision test, then the minor gradations fill in whatever
+            // room is left once the chart is zoomed.
+            const rLabel = (r: number, major: boolean) => ({
+                x: this.centerX + ((r - 1) / (r + 1)) * R,
+                y: this.centerY - 7,
+                text: r.toString(),
+                color: major ? colors.text : colors.gridMajor,
+                font: major ? '8px ui-monospace, monospace' : '7px ui-monospace, monospace'
             });
+            this.placeLabels([
+                ...SmithChartClock.GRID_MAJOR.map(r => rLabel(r, true)),
+                ...SmithChartClock.GRID_MINOR.map(r => rLabel(r, false))
+            ]);
         }
 
         // 4. Draw Constant Reactance (x) Arcs
@@ -1010,22 +1132,22 @@ export class SmithChartClock {
             // meeting point at Gamma = (jx - 1)/(jx + 1), always on |Gamma| = 1.
             // The grid draws +jx in the upper half, so the imaginary axis is
             // flipped here: (cos, -sin).
-            ctx.fillStyle = colors.text;
-            ctx.font = '7px ui-monospace, monospace';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            SmithChartClock.X_LABELLED.forEach(x => {
-                [x, -x].forEach(val => {
-                    const denom = 1 + val * val;
-                    const angle = Math.atan2((2 * val) / denom, (val * val - 1) / denom);
-                    const rr = R - 30;
-                    ctx.fillText(
-                        (val > 0 ? '+j' : '-j') + Math.abs(val),
-                        this.centerX + rr * Math.cos(angle),
-                        this.centerY - rr * Math.sin(angle)
-                    );
-                });
-            });
+            const xLabel = (val: number, major: boolean) => {
+                const denom = 1 + val * val;
+                const angle = Math.atan2((2 * val) / denom, (val * val - 1) / denom);
+                const rr = R - 30;
+                return {
+                    x: this.centerX + rr * Math.cos(angle),
+                    y: this.centerY - rr * Math.sin(angle),
+                    text: (val > 0 ? '+j' : '-j') + Math.abs(val),
+                    color: major ? colors.text : colors.gridMajor,
+                    font: major ? '8px ui-monospace, monospace' : '7px ui-monospace, monospace'
+                };
+            };
+            this.placeLabels([
+                ...SmithChartClock.GRID_MAJOR.flatMap(x => [xLabel(x, true), xLabel(-x, true)]),
+                ...SmithChartClock.GRID_MINOR.flatMap(x => [xLabel(x, false), xLabel(-x, false)])
+            ]);
         }
 
         // 5. Draw Prime Center Marker (Matched 50 Ohm Point Gamma = 0)
@@ -1171,7 +1293,9 @@ export class SmithChartClock {
         lineWidth: number,
         label?: string,
         glow: boolean = true,
-        origin?: CartesianCoordinate
+        origin?: CartesianCoordinate,
+        anchor?: CartesianCoordinate,
+        reachRim: boolean = false
     ): CartesianCoordinate {
         const ctx = this.ctx;
 
@@ -1179,17 +1303,27 @@ export class SmithChartClock {
         // hour of day, the dot riding the real axis.
         const o = origin ?? { x: this.centerX, y: this.centerY };
 
+        // Some arms take their direction from a triangle corner rather than from
+        // their own wheel phase, so the arm and the corner cannot drift apart.
+        // Either way the arm runs out to the main circle.
+        const angle = anchor
+            ? Math.atan2(anchor.y - o.y, anchor.x - o.x)
+            : polar.phase;
+
         // Where that ray leaves the unit circle, so no arm overshoots the chart
         // once its origin has slid away from the middle.
         const ox = o.x - this.centerX;
         const oy = o.y - this.centerY;
-        const dx = Math.cos(polar.phase);
-        const dy = Math.sin(polar.phase);
+        const dx = Math.cos(angle);
+        const dy = Math.sin(angle);
         const proj = ox * dx + oy * dy;
         const limit = -proj + Math.sqrt(
             Math.max(0, proj * proj + this.scaleRadius * this.scaleRadius - (ox * ox + oy * oy))
         );
-        const length = Math.min(polar.magnitude * this.scaleRadius, limit * 0.97);
+        // Arms bound to a triangle corner run on through it to the rim; every
+        // other arm keeps its own radius, which is what puts it on its own
+        // constant-VSWR circle.
+        const length = reachRim ? limit * 0.97 : Math.min(polar.magnitude * this.scaleRadius, limit * 0.97);
         const target: CartesianCoordinate = { x: o.x + length * dx, y: o.y + length * dy };
 
         ctx.save();
@@ -1210,7 +1344,6 @@ export class SmithChartClock {
 
         // Draw phasor arrowhead
         const headLength = Math.max(6, lineWidth * 2.5);
-        const angle = polar.phase;
         const arrowAngle = Math.PI / 7;
 
         ctx.fillStyle = color;
@@ -1226,6 +1359,18 @@ export class SmithChartClock {
         );
         ctx.closePath();
         ctx.fill();
+
+        // The corner the arm passes through, marked on the shaft
+        if (anchor && reachRim) {
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#0a0d14';
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(anchor.x, anchor.y, 4, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.stroke();
+        }
 
         // Draw label if provided
         if (label) {
@@ -1677,6 +1822,14 @@ export class SmithChartClock {
      * runs from the matched centre out to the rim in the same direction, which
      * is what actually points at the 10 at twenty to eleven.
      */
+    /** Where a wheel's ghost ray meets the rim, and so where its chip sits. */
+    private rimPointFor(phase: number): CartesianCoordinate {
+        return {
+            x: this.centerX + this.scaleRadius * Math.cos(phase),
+            y: this.centerY + this.scaleRadius * Math.sin(phase)
+        };
+    }
+
     private drawGhostHand(polar: PolarCoordinate, color: string, reading?: string): void {
         const ctx = this.ctx;
         ctx.save();
@@ -2076,7 +2229,16 @@ export class SmithChartClock {
         const minutes = now.getMinutes() + (seconds / 60);
         const hours = (now.getHours() % 12) + (minutes / 60);
 
-        // 1. Draw Smith Chart Background Grid
+        // 1. Clear, then fence the chart into its own area so a zoomed-in view
+        //    cannot spill over the parameter strip below it.
+        this.ctx.fillStyle = colors.background;
+        this.ctx.fillRect(0, 0, this.canvas.width / this.dpr, this.canvas.height / this.dpr);
+
+        this.ctx.save();
+        this.ctx.beginPath();
+        this.ctx.rect(0, 0, this.canvas.width / this.dpr, this.stripTop);
+        this.ctx.clip();
+
         this.drawSmithChartGrid();
 
         // 2. Draw Historical Date-DNA Spiral (decorative, off by default)
@@ -2186,17 +2348,23 @@ export class SmithChartClock {
         if (this.options.showSecondHand) this.drawGhostHand(secVector, secColor, readingFor('second'));
 
         // Hour Hand (Low frequency, thick)
-        this.drawPhasorVector(hrVector, hrColor, 9.0, 'H', true, dayOrigin);
+        // Each arm is aimed at its own rim value, so the minute arm points at the
+        // minute reading and the hour arm at the hour, even though both now start
+        // from the pivot rather than the centre of the chart.
+        this.drawPhasorVector(hrVector, hrColor, 9.0, 'H', true, dayOrigin, this.rimPointFor(hrPhase));
 
         // Minute Hand (High frequency, medium)
-        this.drawPhasorVector(minVector, minColor, 6.0, 'M', true, dayOrigin);
+        this.drawPhasorVector(minVector, minColor, 6.0, 'M', true, dayOrigin, this.rimPointFor(minPhase));
 
-        // Second Hand (Sweep needle)
+        // Second Hand (Sweep needle) runs through its corner and on to the rim
         if (this.options.showSecondHand) {
-            this.drawPhasorVector(secVector, secColor, 2.8, undefined, true, dayOrigin);
+            this.drawPhasorVector(secVector, secColor, 2.8, undefined, true, dayOrigin, anchors.second, true);
 
-            // Counterweight on second hand
-            const tailAngle = secPhase + Math.PI;
+            // Counterweight, opposite the way the arm actually points
+            const tailAngle = Math.atan2(
+                anchors.second.y - dayOrigin.y,
+                anchors.second.x - dayOrigin.x
+            ) + Math.PI;
             const tailLen = this.scaleRadius * 0.18;
             this.ctx.save();
             this.ctx.strokeStyle = secColor;
@@ -2221,12 +2389,19 @@ export class SmithChartClock {
             for (const hand of SmithChartRFMath.handVectorsForTime(now)) {
                 if (hand.id !== 'date' && hand.id !== 'month' && hand.id !== 'year') continue;
                 this.drawGhostHand(hand.polar, calendarColors[hand.id], `${hand.label} ${hand.value}`);
-                this.drawPhasorVector(hand.polar, calendarColors[hand.id], 4.5, hand.label, true, dayOrigin);
+                // The date arm is a triangle corner too, so it runs through it
+                this.drawPhasorVector(
+                    hand.polar, calendarColors[hand.id], 4.5, hand.label, true, dayOrigin,
+                    hand.id === 'date' ? anchors.date : this.rimPointFor(hand.polar.phase),
+                    hand.id === 'date'
+                );
             }
         }
 
         this.flushRimReadings();
         this.drawPivotMark(dayOrigin);
+
+        this.ctx.restore(); // end of the chart's clip
 
         // 7. Mark where the composite phasor stands on its own locus right now
         const nowPoint = this.polarToCartesian(composite);
@@ -2422,5 +2597,10 @@ export class SmithChartClock {
     public destroy(): void {
         this.stop();
         window.removeEventListener('resize', this.onWindowResize);
+        this.canvas.removeEventListener('wheel', this.onWheel);
+        this.canvas.removeEventListener('mousedown', this.onPointerDown);
+        this.canvas.removeEventListener('mousemove', this.onPointerMove);
+        this.canvas.removeEventListener('dblclick', this.onDoubleClick);
+        window.removeEventListener('mouseup', this.onPointerUp);
     }
 }

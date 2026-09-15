@@ -720,6 +720,15 @@
 
                 <div class="control-group">
                     <div class="switch-row">
+                        <span>Chart zoom <span style="color: var(--text-muted); font-size: 0.7rem;">(wheel to zoom, drag to pan, double-click to reset)</span></span>
+                        <span class="badge" id="zoomBadge">1.00&#215;</span>
+                    </div>
+                    <div class="btn-row">
+                        <button onclick="nudgeZoom(1 / 1.35)">&#8722; Out</button>
+                        <button onclick="nudgeZoom(1.35)">+ In</button>
+                        <button onclick="resetZoom()">&#9678; Fit</button>
+                    </div>
+                    <div class="switch-row">
                         <span>Plotted intersection</span>
                         <select id="plotPairSelect" style="width: auto; padding: 4px 8px; font-size: 0.75rem;"></select>
                     </div>
@@ -1216,6 +1225,16 @@
         document.getElementById('chkAdmittance').addEventListener('change', e => config.showAdmittance = e.target.checked);
         document.getElementById('chkVswr').addEventListener('change', e => config.showVswrCircles = e.target.checked);
         document.getElementById('chkCalendar').addEventListener('change', e => config.showCalendar = e.target.checked);
+        // Zoom buttons work from the middle of the chart
+        function nudgeZoom(factor) {
+            zoomAbout(baseCenterX, baseCenterY, factor);
+        }
+
+        function resetZoom() {
+            resetView();
+            document.getElementById('zoomBadge').textContent = '1.00\u00d7';
+        }
+
         // Populate and wire the plotted-intersection selector
         const plotPairSelect = document.getElementById('plotPairSelect');
         plotPairSelect.innerHTML = PLOT_PAIRS
@@ -1242,6 +1261,47 @@
         let stripHeight = 0;
         let cssWidth = 680;
         let cssHeight = 880;
+
+        // Where the chart would sit unzoomed. The parameter strip stays pinned to
+        // these, so only the chart itself moves under zoom and pan.
+        let baseCenterX = 340;
+        let baseCenterY = 340;
+        let baseRadius = 290;
+
+        // Zoom magnifies the chart radius rather than applying a canvas
+        // transform, so line widths and type stay at their natural pixel size
+        // and the fine gradations become readable as they spread apart.
+        const view = { zoom: 1, panX: 0, panY: 0 };
+        const MAX_ZOOM = 24;
+
+        function applyView() {
+            centerX = baseCenterX + view.panX;
+            centerY = baseCenterY + view.panY;
+            scaleRadius = baseRadius * view.zoom;
+        }
+
+        function resetView() {
+            view.zoom = 1;
+            view.panX = 0;
+            view.panY = 0;
+            applyView();
+        }
+
+        /** Zooms about a point on the canvas, keeping whatever is under it still. */
+        function zoomAbout(px, py, factor) {
+            const previous = view.zoom;
+            const next = Math.min(MAX_ZOOM, Math.max(1, previous * factor));
+            if (next === previous) return;
+
+            const k = next / previous;
+            view.panX = px - k * (px - centerX) - baseCenterX;
+            view.panY = py - k * (py - centerY) - baseCenterY;
+            view.zoom = next;
+            applyView();
+
+            const badge = document.getElementById('zoomBadge');
+            if (badge) badge.textContent = `${view.zoom.toFixed(2)}\u00d7`;
+        }
 
         // Room the legend and the card's own padding need underneath the canvas
         const CANVAS_CHROME_PX = 92;
@@ -1285,11 +1345,12 @@
             ctx.resetTransform?.();
             ctx.scale(dpr, dpr);
 
-            centerX = width / 2;
-            centerY = width / 2;
+            baseCenterX = width / 2;
+            baseCenterY = width / 2;
             // Outside the rim sit the dial numbers and, beyond them, the value
             // each ghost line is reading. Both need clearance.
-            scaleRadius = (width / 2) - 52;
+            baseRadius = (width / 2) - 52;
+            applyView();
         }
 
         window.addEventListener('resize', resizeCanvas);
@@ -1416,11 +1477,53 @@
             link.click();
         };
 
+        // Wheel zooms about the cursor. The step is deliberately small so the
+        // fine gradations can be crept up on rather than jumped past.
+        canvas.addEventListener('wheel', e => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            zoomAbout(
+                e.clientX - rect.left,
+                e.clientY - rect.top,
+                Math.exp(-e.deltaY * 0.0012)
+            );
+        }, { passive: false });
+
+        // Drag to pan once zoomed in
+        let dragging = null;
+        canvas.addEventListener('mousedown', e => {
+            const rect = canvas.getBoundingClientRect();
+            dragging = {
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top,
+                panX: view.panX,
+                panY: view.panY
+            };
+            canvas.style.cursor = 'grabbing';
+        });
+
+        window.addEventListener('mouseup', () => {
+            dragging = null;
+            canvas.style.cursor = 'crosshair';
+        });
+
+        canvas.addEventListener('dblclick', () => {
+            resetView();
+            const badge = document.getElementById('zoomBadge');
+            if (badge) badge.textContent = '1.00×';
+        });
+
         // Mouse hover probe on canvas
         canvas.addEventListener('mousemove', e => {
             const rect = canvas.getBoundingClientRect();
             const clientX = e.clientX - rect.left;
             const clientY = e.clientY - rect.top;
+
+            if (dragging) {
+                view.panX = dragging.panX + (clientX - dragging.x);
+                view.panY = dragging.panY + (clientY - dragging.y);
+                applyView();
+            }
 
             const polar = SmithMath.cartesianToPolar(clientX, clientY, centerX, centerY, scaleRadius);
             const gammaRe = polar.mag * Math.cos(polar.phase);
@@ -1438,12 +1541,49 @@
         // ==========================================
         // 3. RENDER ENGINE & VISUAL LOOP
         // ==========================================
+        /**
+         * Prints as many of the candidate labels as will actually fit.
+         *
+         * Every gradation on the chart offers a label; which ones survive is
+         * decided here by whether they collide with one already down. That is
+         * what makes the chart densify as it is zoomed: the same candidates
+         * spread apart, so more of them get through. Feed majors before minors,
+         * because earlier candidates win.
+         */
+        function placeLabels(candidates, pad = 3) {
+            const placed = [];
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            for (const item of candidates) {
+                if (item.x < -40 || item.x > cssWidth + 40) continue;
+                if (item.y < -20 || item.y > stripTop + 20) continue;
+
+                ctx.font = item.font;
+                const w = ctx.measureText(item.text).width + pad * 2;
+                const h = 9 + pad;
+
+                const clash = placed.some(q =>
+                    Math.abs(item.x - q.x) < (w + q.w) / 2 &&
+                    Math.abs(item.y - q.y) < (h + q.h) / 2);
+                if (clash) continue;
+
+                placed.push({ x: item.x, y: item.y, w, h });
+                ctx.fillStyle = item.color;
+                if (item.rotate) {
+                    ctx.save();
+                    ctx.translate(item.x, item.y);
+                    ctx.rotate(item.rotate);
+                    ctx.fillText(item.text, 0, 0);
+                    ctx.restore();
+                } else {
+                    ctx.fillText(item.text, item.x, item.y);
+                }
+            }
+        }
+
         function drawSmithChartGrid() {
             const R = scaleRadius;
-
-            // Clear Background
-            ctx.fillStyle = '#0a0d14';
-            ctx.fillRect(0, 0, canvas.width / dpr, canvas.height / dpr);
 
             // Outer Unit Circle (|Gamma| = 1.0)
             ctx.strokeStyle = '#38bdf8';
@@ -1473,15 +1613,20 @@
                 GRID_MINOR.forEach(r => drawR(r, '#172033', 0.4));
                 GRID_MAJOR.forEach(r => drawR(r, r === 1.0 ? '#5b6b85' : '#26344a', r === 1.0 ? 1.3 : 0.75));
 
-                // Printed values, sitting on the real axis
-                ctx.fillStyle = '#64748b';
-                ctx.font = '7px ui-monospace, monospace';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'bottom';
-                R_LABELLED.forEach(r => {
-                    const lx = centerX + ((r - 1) / (r + 1)) * R;
-                    if (lx < centerX + R - 12) ctx.fillText(r.toString(), lx, centerY - 3);
+                // Printed values on the real axis. Majors are offered first so
+                // they win the collision test, then the minor gradations fill in
+                // whatever room is left once the chart is zoomed.
+                const rLabel = (r, major) => ({
+                    x: centerX + ((r - 1) / (r + 1)) * R,
+                    y: centerY - 7,
+                    text: r.toString(),
+                    color: major ? '#94a3b8' : '#5b6b85',
+                    font: major ? '8px ui-monospace, monospace' : '7px ui-monospace, monospace'
                 });
+                placeLabels([
+                    ...GRID_MAJOR.map(r => rLabel(r, true)),
+                    ...GRID_MINOR.map(r => rLabel(r, false))
+                ]);
             }
 
             // Constant Reactance Arcs (±jx)
@@ -1511,24 +1656,22 @@
 
                 // Printed values, where each arc meets the rim. z = jx puts that
                 // meeting point at Gamma = (jx - 1)/(jx + 1), always on |Gamma| = 1.
-                ctx.fillStyle = '#64748b';
-                ctx.font = '7px ui-monospace, monospace';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                X_LABELLED.forEach(x => {
-                    [x, -x].forEach(val => {
-                        const denom = 1 + val * val;
-                        const gRe = (val * val - 1) / denom;
-                        const gIm = (2 * val) / denom;
-                        const angle = Math.atan2(gIm, gRe);
-                        const rr = R - 30;
-                        ctx.fillText(
-                            (val > 0 ? '+j' : '-j') + Math.abs(val),
-                            centerX + rr * Math.cos(angle),
-                            centerY - rr * Math.sin(angle)
-                        );
-                    });
-                });
+                const xLabel = (val, major) => {
+                    const denom = 1 + val * val;
+                    const angle = Math.atan2((2 * val) / denom, (val * val - 1) / denom);
+                    const rr = R - 30;
+                    return {
+                        x: centerX + rr * Math.cos(angle),
+                        y: centerY - rr * Math.sin(angle),
+                        text: (val > 0 ? '+j' : '-j') + Math.abs(val),
+                        color: major ? '#94a3b8' : '#5b6b85',
+                        font: major ? '8px ui-monospace, monospace' : '7px ui-monospace, monospace'
+                    };
+                };
+                placeLabels([
+                    ...GRID_MAJOR.flatMap(x => [xLabel(x, true), xLabel(-x, true)]),
+                    ...GRID_MINOR.flatMap(x => [xLabel(x, false), xLabel(-x, false)])
+                ]);
             }
 
             // Prime Center Dot (Matched Load: Z = 50 + j0, Gamma = 0)
@@ -1738,22 +1881,32 @@
             ctx.restore();
         }
 
-        function drawPhasorVector(mag, phase, color, lineWidth, label, origin) {
+        function drawPhasorVector(mag, phase, color, lineWidth, label, origin, endpoint, reachRim) {
             // The arms no longer grow out of the chart centre: they emanate from
             // the hour of day, the dot riding the real axis.
             const o = origin || { x: centerX, y: centerY };
+
+            // Some arms take their direction from a triangle corner rather than
+            // from their own wheel phase, so the arm and the corner cannot drift
+            // apart. Either way the arm runs out to the main circle.
+            const angle = endpoint
+                ? Math.atan2(endpoint.y - o.y, endpoint.x - o.x)
+                : phase;
 
             // Where that ray leaves the unit circle, so no arm overshoots the
             // chart once its origin has slid away from the middle.
             const ox = o.x - centerX;
             const oy = o.y - centerY;
-            const dx = Math.cos(phase);
-            const dy = Math.sin(phase);
+            const dx = Math.cos(angle);
+            const dy = Math.sin(angle);
             const proj = ox * dx + oy * dy;
             const limit = -proj + Math.sqrt(
                 Math.max(0, proj * proj + scaleRadius * scaleRadius - (ox * ox + oy * oy))
             );
-            const length = Math.min(mag * scaleRadius, limit * 0.97);
+            // Arms bound to a triangle corner run on through it to the rim;
+            // every other arm keeps its own radius, which is what puts it on its
+            // own constant-VSWR circle.
+            const length = reachRim ? limit * 0.97 : Math.min(mag * scaleRadius, limit * 0.97);
 
             const target = { x: o.x + length * dx, y: o.y + length * dy };
 
@@ -1776,10 +1929,22 @@
             ctx.fillStyle = color;
             ctx.beginPath();
             ctx.moveTo(target.x, target.y);
-            ctx.lineTo(target.x - headLen * Math.cos(phase - arrowAngle), target.y - headLen * Math.sin(phase - arrowAngle));
-            ctx.lineTo(target.x - headLen * Math.cos(phase + arrowAngle), target.y - headLen * Math.sin(phase + arrowAngle));
+            ctx.lineTo(target.x - headLen * Math.cos(angle - arrowAngle), target.y - headLen * Math.sin(angle - arrowAngle));
+            ctx.lineTo(target.x - headLen * Math.cos(angle + arrowAngle), target.y - headLen * Math.sin(angle + arrowAngle));
             ctx.closePath();
             ctx.fill();
+
+            // The corner the arm passes through, marked on the shaft
+            if (endpoint && reachRim) {
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = '#0a0d14';
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(endpoint.x, endpoint.y, 4, 0, 2 * Math.PI);
+                ctx.fill();
+                ctx.stroke();
+            }
 
             if (label) {
                 ctx.shadowBlur = 0;
@@ -1788,7 +1953,7 @@
                 const dist = Math.max(16, lineWidth * 2.6);
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText(label, target.x + dist * Math.cos(phase), target.y + dist * Math.sin(phase));
+                ctx.fillText(label, target.x + dist * Math.cos(angle), target.y + dist * Math.sin(angle));
             }
 
             ctx.restore();
@@ -2335,6 +2500,14 @@
          * line runs from the matched centre out to the rim in the same direction,
          * which is what actually points at the 10 at twenty to eleven.
          */
+        /** Where a wheel's ghost ray meets the rim, and so where its chip sits. */
+        function rimPointFor(phase) {
+            return {
+                x: centerX + scaleRadius * Math.cos(phase),
+                y: centerY + scaleRadius * Math.sin(phase)
+            };
+        }
+
         function drawGhostHand(mag, phase, color, reading) {
             ctx.save();
             ctx.strokeStyle = color;
@@ -2529,7 +2702,16 @@
                 playTickSound();
             }
 
-            // 1. Draw Smith Background Grid
+            // 1. Clear, then fence the chart into its own area so a zoomed-in
+            //    view cannot spill over the parameter strip below it.
+            ctx.fillStyle = '#0a0d14';
+            ctx.fillRect(0, 0, cssWidth, cssHeight);
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(0, 0, cssWidth, stripTop);
+            ctx.clip();
+
             drawSmithChartGrid();
 
             // 2. Draw Historical Date DNA Spiral (decorative, off by default)
@@ -2619,14 +2801,20 @@
             drawGhostHand(minMag, minPhase, minColor, `M ${wheelsNow.minute.value}`);
             if (config.showSecond) drawGhostHand(secMag, secPhase, secColor, `S ${wheelsNow.second.value}`);
 
-            drawPhasorVector(hrMag, hrPhase, hrColor, 9.0, 'H', dayOrigin);
-            drawPhasorVector(minMag, minPhase, minColor, 6.0, 'M', dayOrigin);
+            // Each arm is aimed at its own rim value, so the minute arm points at
+            // the minute reading and the hour arm at the hour, even though both
+            // now start from the pivot rather than the centre of the chart.
+            drawPhasorVector(hrMag, hrPhase, hrColor, 9.0, 'H', dayOrigin, rimPointFor(hrPhase));
+            drawPhasorVector(minMag, minPhase, minColor, 6.0, 'M', dayOrigin, rimPointFor(minPhase));
 
             if (config.showSecond) {
-                drawPhasorVector(secMag, secPhase, secColor, 2.8, null, dayOrigin);
+                drawPhasorVector(secMag, secPhase, secColor, 2.8, null, dayOrigin, anchors.second, true);
 
-                // Counterweight tail
-                const tailAngle = secPhase + Math.PI;
+                // Counterweight tail, opposite the way the arm actually points
+                const tailAngle = Math.atan2(
+                    anchors.second.y - dayOrigin.y,
+                    anchors.second.x - dayOrigin.x
+                ) + Math.PI;
                 const tailLen = scaleRadius * 0.18;
                 ctx.save();
                 ctx.strokeStyle = secColor;
@@ -2645,7 +2833,11 @@
                 ['date', 'month', 'year'].forEach(id => {
                     drawGhostHand(hands[id].mag, hands[id].phase, calColors[id],
                         `${hands[id].label} ${hands[id].value}`);
-                    drawPhasorVector(hands[id].mag, hands[id].phase, calColors[id], 4.5, hands[id].label, dayOrigin);
+                    // The date arm is a triangle corner too, so it lands on it
+                    drawPhasorVector(hands[id].mag, hands[id].phase, calColors[id], 4.5,
+                        hands[id].label, dayOrigin,
+                        id === 'date' ? anchors.date : rimPointFor(hands[id].phase),
+                        id === 'date');
                 });
             }
 
@@ -2662,6 +2854,8 @@
 
             flushRimReadings();
             drawPivotMark(dayOrigin);
+
+            ctx.restore(); // end of the chart's clip
 
             // 7. Mark where the interference sum has actually reached
             drawTimePlot(now, composite);
