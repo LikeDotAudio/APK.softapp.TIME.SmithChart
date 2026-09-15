@@ -89,7 +89,7 @@
 
         .main-layout {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) 360px;
+            grid-template-columns: minmax(0, 1fr) 400px;
             gap: 20px;
             padding: 8px;
             flex: 1;
@@ -111,7 +111,7 @@
             display: flex;
             gap: 10px;
             align-items: flex-start;
-            justify-content: center;
+            justify-content: flex-start;
             flex-wrap: wrap;
             min-width: 0;
         }
@@ -139,7 +139,7 @@
         .stage-controls {
             flex: 1 1 320px;
             min-width: 300px;
-            max-width: 430px;
+            max-width: 540px;
             min-height: 0;
             display: flex;
             flex-direction: column;
@@ -305,24 +305,6 @@
             gap: 16px;
         }
 
-        /* A flip between constructive and destructive is worth noticing, so the
-           panel gives a short bounce when the state actually changes. */
-        @keyframes phasor-bounce {
-            0%   { transform: scale(1); }
-            22%  { transform: scale(1.035) translateY(-3px); }
-            48%  { transform: scale(0.992) translateY(1px); }
-            72%  { transform: scale(1.012) translateY(-1px); }
-            100% { transform: scale(1); }
-        }
-
-        .card.state-bounce {
-            animation: phasor-bounce 520ms cubic-bezier(0.34, 1.56, 0.64, 1);
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-            .card.state-bounce { animation: none; }
-        }
-
         .card {
             background: var(--bg-card);
             border: 1px solid var(--bg-card-border);
@@ -478,14 +460,21 @@
 
         .assign-select {
             width: 100%;
-            padding: 2px 4px;
+            padding: 2px 4px 2px 12px;
             font-size: 0.68rem;
             font-family: var(--font-mono);
         }
 
+        .assign-head {
+            font-size: 0.66rem;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: -4px;
+        }
+
         .time-slider-row {
             display: grid;
-            grid-template-columns: 62px minmax(0, 1fr) 52px 132px;
+            grid-template-columns: 52px minmax(40px, 1fr) 42px minmax(0, 116px) minmax(0, 116px);
             gap: 8px;
             align-items: center;
             font-size: 0.8rem;
@@ -508,8 +497,91 @@
             width: 100%;
         }
 
+        /* Layers: one row per thing on the chart, with whether it shows, its
+           colours, how heavy its lines are and what they are dashed like */
+        .layer-table {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+        }
+
+        .layer-row,
+        .layer-head {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 20px 66px 64px 76px 22px;
+            gap: 5px;
+            align-items: center;
+            padding: 3px 4px;
+            border-radius: 6px;
+            font-size: 0.78rem;
+            color: var(--text-main);
+        }
+
+        .layer-row:hover {
+            background: rgba(255, 255, 255, 0.035);
+        }
+
+        .layer-head {
+            font-size: 0.6rem;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #64748b;
+            border-bottom: 1px solid var(--bg-card-border);
+            padding-bottom: 5px;
+        }
+
+        .layer-group {
+            font-size: 0.62rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--accent-cyan);
+            margin: 8px 4px 2px;
+        }
+
+        .layer-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .layer-show input {
+            width: 15px;
+            height: 15px;
+            accent-color: var(--accent-cyan);
+            cursor: pointer;
+        }
+
+        .layer-colours {
+            display: flex;
+            gap: 3px;
+        }
+
+        .layer-colours input[type="color"] {
+            width: 20px;
+            height: 16px;
+            padding: 0;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 3px;
+            background: none;
+            cursor: pointer;
+        }
+
+        .layer-row select {
+            width: 100%;
+            padding: 2px 3px;
+            font-size: 0.68rem;
+        }
+
+        .layer-row button {
+            padding: 1px 0;
+            justify-content: center;
+            font-size: 0.72rem;
+        }
+
         .switch-row {
             display: flex;
+            flex-wrap: wrap;
+            row-gap: 4px;
             justify-content: space-between;
             align-items: center;
             font-size: 0.85rem;
@@ -570,35 +642,45 @@
                 </div>
 
                 <div class="control-group">
+                    <div class="time-slider-row assign-head">
+                        <span></span><span></span><span></span>
+                        <span>Angle ∠</span>
+                        <span>Length |Γ|</span>
+                    </div>
                     <div class="time-slider-row">
                         <span>Year:</span>
                         <input type="range" id="sliderYear" min="1900" max="2100" value="2026">
                         <span id="labelYear">2026</span>
-                        <select class="assign-select" data-field="year"></select>
+                        <select class="assign-select" data-field="year" data-target="angle"></select>
+                        <select class="assign-select" data-field="year" data-target="length"></select>
                     </div>
                     <div class="time-slider-row">
                         <span>Month:</span>
                         <input type="range" id="sliderMonth" min="1" max="12" value="8">
                         <span id="labelMonth">08</span>
-                        <select class="assign-select" data-field="month"></select>
+                        <select class="assign-select" data-field="month" data-target="angle"></select>
+                        <select class="assign-select" data-field="month" data-target="length"></select>
                     </div>
                     <div class="time-slider-row">
                         <span>Day:</span>
                         <input type="range" id="sliderDay" min="1" max="31" value="23">
                         <span id="labelDay">23</span>
-                        <select class="assign-select" data-field="day"></select>
+                        <select class="assign-select" data-field="day" data-target="angle"></select>
+                        <select class="assign-select" data-field="day" data-target="length"></select>
                     </div>
                     <div class="time-slider-row">
                         <span>Hour:</span>
                         <input type="range" id="sliderHour" min="0" max="23" value="11">
                         <span id="labelHour">11:00</span>
-                        <select class="assign-select" data-field="hour"></select>
+                        <select class="assign-select" data-field="hour" data-target="angle"></select>
+                        <select class="assign-select" data-field="hour" data-target="length"></select>
                     </div>
                     <div class="time-slider-row">
                         <span>Minute:</span>
                         <input type="range" id="sliderMinute" min="0" max="59" value="18">
                         <span id="labelMinute">18m</span>
-                        <select class="assign-select" data-field="minute"></select>
+                        <select class="assign-select" data-field="minute" data-target="angle"></select>
+                        <select class="assign-select" data-field="minute" data-target="length"></select>
                     </div>
                 </div>
 
@@ -710,13 +792,6 @@
                     </div>
                 </div>
 
-                <div class="card">
-                    <div class="card-header">
-                        <span class="card-title">🎨 Colours</span>
-                        <span class="badge">click a swatch</span>
-                    </div>
-                    <div id="palettePanel"></div>
-                </div>
             </div>
             </div>
 
@@ -837,64 +912,89 @@
                     <div style="font-size: 0.72rem; color: var(--text-muted); margin: 6px 0 2px;">LOGGED INTERSECTIONS:</div>
                     <div id="loggedPairs"></div>
                     <div class="switch-row">
-                        <span>Interference Sum over Time (24 h)</span>
-                        <input type="checkbox" id="chkDayPath" checked>
-                    </div>
-                    <div class="switch-row">
-                        <span>Admittance Locus (y = 1/z)</span>
-                        <input type="checkbox" id="chkAdmittance">
-                    </div>
-                    <div class="switch-row">
-                        <span>Constant-VSWR Circles</span>
-                        <input type="checkbox" id="chkVswr" checked>
-                    </div>
-                    <div class="switch-row">
-                        <span>Calendar Wheels (Date / Month / Year)</span>
-                        <input type="checkbox" id="chkCalendar" checked>
-                    </div>
-                    <div class="switch-row">
                         <span>Radius = normalized value (24 h &#8594; 1)</span>
                         <input type="checkbox" id="chkNormalized">
                     </div>
-                    <div class="switch-row">
-                        <span>Region Labels (r / x &amp; half of day)</span>
-                        <input type="checkbox" id="chkRegions" checked>
-                    </div>
-                    <div class="switch-row">
-                        <span>Time Landmarks (day axis &amp; &#177;1 arcs)</span>
-                        <input type="checkbox" id="chkLandmarks" checked>
-                    </div>
-                    <div class="switch-row">
-                        <span>Pivot Trace (centroid path)</span>
-                        <input type="checkbox" id="chkPivotTrace" checked>
-                    </div>
-                    <div class="switch-row">
-                        <span>Radially Scaled Parameters</span>
-                        <input type="checkbox" id="chkRadialScales" checked>
-                    </div>
-                    <div class="switch-row">
-                        <span>Rim Scales (&#955; &amp; &#8736;&#915;)</span>
-                        <input type="checkbox" id="chkRimScales" checked>
-                    </div>
-                    <div class="switch-row">
-                        <span>Historical Date-DNA Spiral</span>
-                        <input type="checkbox" id="chkSpiral">
-                    </div>
-                    <div class="switch-row">
-                        <span>Composite Resultant Vector (Σ)</span>
-                        <input type="checkbox" id="chkComposite" checked>
-                    </div>
-                    <div class="switch-row">
-                        <span>Second Hand Sweep</span>
-                        <input type="checkbox" id="chkSecond" checked>
-                    </div>
-                    <div class="switch-row">
-                        <span>Reactance Arcs (±jx)</span>
-                        <input type="checkbox" id="chkReactance" checked>
-                    </div>
-                    <div class="switch-row">
-                        <span>Resistance Circles (r)</span>
-                        <input type="checkbox" id="chkResistance" checked>
+
+                    <!-- Layers: colour, weight and style cells are filled in by script -->
+                    <div class="layer-table">
+                        <div class="layer-head">
+                            <span>Layer</span><span>On</span><span>Colour</span><span>Weight</span><span>Style</span><span></span>
+                        </div>
+
+                        <div class="layer-group">Hands</div>
+                        <div class="layer-row" data-layer="hour" data-palette="hour">
+                            <span class="layer-name">Hour vector</span><span class="layer-show"></span>
+                        </div>
+                        <div class="layer-row" data-layer="minute" data-palette="minute">
+                            <span class="layer-name">Minute vector</span><span class="layer-show"></span>
+                        </div>
+                        <div class="layer-row" data-layer="second" data-palette="second">
+                            <span class="layer-name">Second needle</span>
+                            <span class="layer-show"><input type="checkbox" id="chkSecond" checked></span>
+                        </div>
+                        <div class="layer-row" data-layer="calendar" data-palette="date,month,year">
+                            <span class="layer-name" title="Date, month and year wheels">Calendar</span>
+                            <span class="layer-show"><input type="checkbox" id="chkCalendar" checked></span>
+                        </div>
+                        <div class="layer-row" data-layer="composite" data-palette="sigma">
+                            <span class="layer-name">&#931; vector</span>
+                            <span class="layer-show"><input type="checkbox" id="chkComposite" checked></span>
+                        </div>
+
+                        <div class="layer-group">Traces</div>
+                        <div class="layer-row" data-layer="dayPath" data-palette="trail">
+                            <span class="layer-name" title="Interference sum over the day (24 h)">Day path</span>
+                            <span class="layer-show"><input type="checkbox" id="chkDayPath" checked></span>
+                        </div>
+                        <div class="layer-row" data-layer="admittance">
+                            <span class="layer-name" title="Admittance locus, y = 1/z">Admittance</span>
+                            <span class="layer-show"><input type="checkbox" id="chkAdmittance"></span>
+                        </div>
+                        <div class="layer-row" data-layer="pivotTrace" data-palette="pivotPath">
+                            <span class="layer-name" title="The path of the triangle's centroid">Pivot trace</span>
+                            <span class="layer-show"><input type="checkbox" id="chkPivotTrace" checked></span>
+                        </div>
+                        <div class="layer-row" data-layer="triangle" data-palette="triangle">
+                            <span class="layer-name">Anchor triangle</span><span class="layer-show"></span>
+                        </div>
+                        <div class="layer-row" data-layer="vswr">
+                            <span class="layer-name" title="Constant-VSWR circles">VSWR circles</span>
+                            <span class="layer-show"><input type="checkbox" id="chkVswr" checked></span>
+                        </div>
+
+                        <div class="layer-group">Chart</div>
+                        <div class="layer-row" data-layer="resistance">
+                            <span class="layer-name" title="Constant-resistance circles (r)">Resistance</span>
+                            <span class="layer-show"><input type="checkbox" id="chkResistance" checked></span>
+                        </div>
+                        <div class="layer-row" data-layer="reactance">
+                            <span class="layer-name" title="Constant-reactance arcs (&#177;jx)">Reactance</span>
+                            <span class="layer-show"><input type="checkbox" id="chkReactance" checked></span>
+                        </div>
+                        <div class="layer-row" data-layer="landmarks" data-palette="dayAxis,arcMorning,arcEvening">
+                            <span class="layer-name" title="Day axis and the x = &#177;1 arcs">Day axis</span>
+                            <span class="layer-show"><input type="checkbox" id="chkLandmarks" checked></span>
+                        </div>
+                        <div class="layer-row" data-layer="regions">
+                            <span class="layer-name" title="r / x regions and half of day">Region labels</span>
+                            <span class="layer-show"><input type="checkbox" id="chkRegions" checked></span>
+                        </div>
+                        <div class="layer-row" data-layer="rimScales">
+                            <span class="layer-name" title="Wavelength and angle rings">Rim scales</span>
+                            <span class="layer-show"><input type="checkbox" id="chkRimScales" checked></span>
+                        </div>
+                        <div class="layer-row" data-layer="radialScales">
+                            <span class="layer-name" title="Radially scaled parameters">Parameters</span>
+                            <span class="layer-show"><input type="checkbox" id="chkRadialScales" checked></span>
+                        </div>
+                        <div class="layer-row" data-layer="spiral">
+                            <span class="layer-name" title="Historical Date-DNA spiral">DNA spiral</span>
+                            <span class="layer-show"><input type="checkbox" id="chkSpiral"></span>
+                        </div>
+                        <div class="layer-row" data-palette="clock">
+                            <span class="layer-name">Clock readout</span><span class="layer-show"></span>
+                        </div>
                     </div>
                 </div>
 
@@ -1001,12 +1101,15 @@
         ];
 
         /**
-         * Which wheel each time field is assigned to drive.
+         * Which wheels each time field is assigned to drive.
          *
-         * By default every field drives its namesake, but the dropdowns let any
-         * field be routed to any wheel: point the Day slider at the hour vector
-         * and the hour arm starts reading days. Two fields on one wheel is
-         * allowed; the later field in this list wins it.
+         * A field can drive two things: one wheel's angle and one wheel's
+         * length, its |Gamma|. Either can be left as none. By default every
+         * field turns its namesake and drives no length, but the dropdowns let
+         * any field be routed to any wheel: point the Day slider at the hour
+         * vector and the hour arm starts reading days, or set the minute as the
+         * hour arm's length and it stretches out as the hour goes by. Two fields
+         * on one wheel is allowed; the later field in this list wins it.
          */
         const FIELD_ORDER = ['second', 'minute', 'hour', 'day', 'month', 'year'];
         const WHEELS = ['second', 'minute', 'hour', 'date', 'month', 'year'];
@@ -1020,15 +1123,60 @@
             day: 'date', month: 'month', year: 'year'
         };
 
-        /** wheel -> the field currently feeding it, or null. */
-        function wheelSources() {
+        // Nothing drives a length until it is asked to
+        const fieldToLength = {
+            second: 'none', minute: 'none', hour: 'none',
+            day: 'none', month: 'none', year: 'none'
+        };
+
+        // The anchor triangle's corners, as length targets. The second and
+        // date corners ride their wheels' rings, so they share those lengths;
+        // the hour corner is the dot on the day axis, from 0 at the short
+        // circuit to 1 at the open circuit.
+        const CORNER_TARGETS = { 'corner:hour': 'dayAxis', 'corner:second': 'second', 'corner:date': 'date' };
+
+        // Everything else a field can stretch, beyond the rings. Arms and the
+        // sum run from the pivot toward the rim, 0 to all the way; the pivot's
+        // distance is from the chart centre, 0 to the rim; a triangle side is
+        // 0 to the full diameter, moving its second-named corner.
+        const LENGTH_GROUPS = [
+            { label: 'Arms (pivot → rim)', options: {
+                'arm:hour': 'Hour arm', 'arm:minute': 'Minute arm', 'arm:second': 'Second arm',
+                'arm:date': 'Date arm', 'arm:month': 'Month arm', 'arm:year': 'Year arm',
+                'arm:sigma': 'Σ vector'
+            } },
+            { label: 'Triangle', options: {
+                'corner:hour': 'Hour corner', 'corner:second': 'Second corner', 'corner:date': 'Date corner',
+                'pivot': 'Pivot distance',
+                'side:hour-second': 'Side H–S', 'side:hour-date': 'Side H–D', 'side:second-date': 'Side S–D'
+            } }
+        ];
+
+        /** The palette colour a dropdown's choice is drawn in, for its swatch. */
+        function swatchKeyOf(target) {
+            if (!target || target === 'none') return null;
+            if (target === 'corner:hour') return 'dayAxis';
+            if (target === 'pivot') return 'pivotPath';
+            if (target.startsWith('side:')) return 'triangle';
+            const key = target.replace(/^(arm|corner):/, '');
+            return PALETTE[key] ? key : null;
+        }
+
+        /** wheel -> the field feeding it in the given assignment map. */
+        function sourcesFrom(assignments) {
             const out = {};
             for (const field of FIELD_ORDER) {
-                const wheel = fieldToWheel[field];
-                if (wheel && wheel !== 'none') out[wheel] = field;
+                const target = assignments[field];
+                if (target && target !== 'none') out[CORNER_TARGETS[target] || target] = field;
             }
             return out;
         }
+
+        /** wheel -> the field currently turning it, or none. */
+        const wheelSources = () => sourcesFrom(fieldToWheel);
+
+        /** wheel -> the field currently setting its length, or none. */
+        const lengthSources = () => sourcesFrom(fieldToLength);
 
         const plotPair = () =>
             PLOT_PAIRS.find(pr => pr.id === config.plotPair) || PLOT_PAIRS[0];
@@ -1090,6 +1238,23 @@
              * and rides its own constant-VSWR circle: the faster the wheel, the
              * further out it sits. Twelve o'clock is up, hence the -PI/2 offset.
              */
+            /** Every time field as a ratio of its whole, keyed by wheel. */
+            static fieldNormals(date) {
+                const seconds = date.getSeconds() + date.getMilliseconds() / 1000;
+                const minutes = date.getMinutes() + seconds / 60;
+                const dim = SmithMath.daysInMonth(date);
+                const dayFrac = (date.getDate() - 1) + (date.getHours() + minutes / 60) / 24;
+                const monthFrac = (date.getMonth() + 1) + dayFrac / dim;
+                return {
+                    second: seconds / 60,
+                    minute: minutes / 60,
+                    hour: (date.getHours() + minutes / 60) / 24,
+                    date: dayFrac / dim,
+                    month: monthFrac / 12,
+                    year: (date.getFullYear() % 100) / 100
+                };
+            }
+
             static handVectors(date) {
                 const seconds = date.getSeconds() + date.getMilliseconds() / 1000;
                 const minutes = date.getMinutes() + seconds / 60;
@@ -1114,14 +1279,7 @@
                 // Normalized to 1, the same move the chart makes with impedance:
                 // divide by the whole and keep the ratio. A day is 1, an hour is
                 // 1, a minute is 1 -- so each reading is already a |Gamma|.
-                const normal = {
-                    second: seconds / 60,
-                    minute: minutes / 60,
-                    hour: (date.getHours() + minutes / 60) / 24,
-                    date: dayFrac / dim,
-                    month: monthFrac / 12,
-                    year: yearTwoDigit / 100
-                };
+                const normal = SmithMath.fieldNormals(date);
 
                 // Either every wheel sits on its own fixed circle, or each one's
                 // radius is its own normalized value -- half past putting the
@@ -1143,13 +1301,19 @@
                 };
 
                 const sources = wheelSources();
+                const lengths = lengthSources();
                 const wheel = (id, fallbackField) => {
                     const field = sources[id] || fallbackField;
                     const f = fields[field];
-                    const mag = (config.normalizedRadius || id === 'year')
-                        ? Math.max(0.02, Math.min(1, f.normal))
-                        : HAND_MAGS[id];
-                    return { mag, normal: f.normal, phase: f.phase, value: f.value, field };
+                    // An assigned length is that field's own ratio, read as
+                    // |Gamma|. Without one the wheel keeps its usual radius.
+                    const lengthField = lengths[id] || null;
+                    const mag = lengthField
+                        ? Math.max(0.02, Math.min(1, fields[lengthField].normal))
+                        : (config.normalizedRadius || id === 'year')
+                            ? Math.max(0.02, Math.min(1, f.normal))
+                            : HAND_MAGS[id];
+                    return { mag, normal: f.normal, phase: f.phase, value: f.value, field, lengthField };
                 };
 
                 return {
@@ -1469,18 +1633,36 @@
             document.getElementById('zoomBadge').textContent = '1.00\u00d7';
         }
 
-        // Each time field says which wheel it is driving
+        // Each time field says which wheel's angle, and which wheel's length,
+        // it is driving
         document.querySelectorAll('.assign-select').forEach(select => {
             const field = select.dataset.field;
-            select.innerHTML = WHEELS
-                .map(w => `<option value="${w}"${fieldToWheel[field] === w ? ' selected' : ''}>\u2192 ${WHEEL_LABELS[w]}</option>`)
-                .join('') + '<option value="none">\u2192 (unassigned)</option>';
+            const assignments = select.dataset.target === 'length' ? fieldToLength : fieldToWheel;
+            const option = (value, label) =>
+                `<option value="${value}"${assignments[field] === value ? ' selected' : ''}>${label}</option>`;
+            const wheelOptions = WHEELS.map(w => option(w, WHEEL_LABELS[w])).join('');
+            select.innerHTML = select.dataset.target === 'length'
+                ? option('none', '(none)')
+                    + `<optgroup label="Ring |Γ| (normalized)">${wheelOptions}</optgroup>`
+                    + LENGTH_GROUPS.map(g => `<optgroup label="${g.label}">${
+                        Object.entries(g.options).map(([value, label]) => option(value, label)).join('')}</optgroup>`).join('')
+                : option('none', '(none)') + wheelOptions;
             select.addEventListener('change', e => {
-                fieldToWheel[field] = e.target.value;
+                assignments[field] = e.target.value;
                 dayPathCache.clear();
                 pivotTrace.length = 0;
+                refreshAssignSwatches();
             });
         });
+
+        // Each dropdown carries a swatch in the colour of what it drives
+        function refreshAssignSwatches() {
+            document.querySelectorAll('.assign-select').forEach(select => {
+                const key = swatchKeyOf(select.value);
+                select.style.boxShadow = key ? `inset 7px 0 0 ${paint(key)}` : 'none';
+            });
+        }
+        refreshAssignSwatches();
 
         // How far back every logged trail reaches
         const sliderTrail = document.getElementById('sliderTrail');
@@ -1541,17 +1723,172 @@
         });
         document.getElementById('chkRimScales').addEventListener('change', e => config.showRimScales = e.target.checked);
 
-        // Build the colour palette: one swatch per moving part, live-editable
-        const paletteHost = document.getElementById('palettePanel');
-        paletteHost.innerHTML = Object.entries(PALETTE).map(([key, entry]) => `
-            <label class="palette-row">
-                <input type="color" data-palette="${key}" value="${entry.value}">
-                <span>${entry.label}</span>
-            </label>`).join('');
-        paletteHost.addEventListener('input', e => {
-            const key = e.target.dataset.palette;
-            if (key) PALETTE[key].value = e.target.value;
+        // ==========================================
+        // LAYER STYLES
+        // ==========================================
+        // Every switchable layer can be recoloured, thickened or thinned, and
+        // redrawn solid, long-dashed, short-dashed or dotted. Rather than thread
+        // a style through every draw routine, each layer is drawn inside
+        // pushLayer/popLayer, and the context's stroke and fill apply the
+        // style of whichever layer is on top at the moment they are called.
+        // A swatch is the starting colour for layers drawn in their own fixed
+        // colours; layers drawn from the palette are recoloured through it.
+        const LAYER_STYLES = {
+            hour:         {},
+            minute:       {},
+            second:       {},
+            calendar:     {},
+            composite:    {},
+            dayPath:      {},
+            admittance:   { swatch: '#a855f7' },
+            pivotTrace:   {},
+            triangle:     {},
+            vswr:         { swatch: '#64748b' },
+            resistance:   { swatch: '#60a5fa' },
+            reactance:    { swatch: '#c084fc' },
+            landmarks:    {},
+            regions:      { swatch: '#94a3b8' },
+            rimScales:    { swatch: '#38bdf8' },
+            radialScales: { swatch: '#9fb0c7' },
+            spiral:       { swatch: '#f59e0b' }
+        };
+        for (const style of Object.values(LAYER_STYLES)) {
+            style.color = null;    // null draws in the layer's own colours
+            style.width = 1;       // multiplier on every line it draws
+            style.dash = 'drawn';  // 'drawn' keeps whatever dashes it uses
+        }
+
+        const LAYER_WIDTHS = [['0.5', 'Thin'], ['1', 'Normal'], ['2', 'Fat'], ['3.5', 'Big fat']];
+        const LAYER_DASHES = [['drawn', 'As drawn'], ['solid', 'Solid'], ['long', 'Long dash'], ['short', 'Short dash'], ['dotted', 'Dotted']];
+
+        const layerStack = [];
+        const pushLayer = key => layerStack.push(key);
+        const popLayer = () => layerStack.pop();
+
+        function activeLayerStyle() {
+            const style = LAYER_STYLES[layerStack[layerStack.length - 1]];
+            if (!style) return null;
+            return (style.color || style.width !== 1 || style.dash !== 'drawn') ? style : null;
+        }
+
+        /** '#rrggbb' or 'rgba(r, g, b, a)', as the context reports them. */
+        function parseCanvasColour(value) {
+            if (typeof value !== 'string') return null;
+            if (value[0] === '#' && value.length === 7) {
+                const n = parseInt(value.slice(1), 16);
+                return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255, a: 1 };
+            }
+            const m = value.match(/rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/);
+            return m ? { r: +m[1], g: +m[2], b: +m[3], a: m[4] === undefined ? 1 : +m[4] } : null;
+        }
+
+        /** The chosen colour at the original's alpha, so faint lines stay faint. */
+        function recolour(original, hex) {
+            const c = parseCanvasColour(original);
+            if (!c) return original;
+            const n = parseInt(hex.slice(1), 16);
+            return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${c.a})`;
+        }
+
+        const nativeStroke = ctx.stroke;
+        ctx.stroke = function (...args) {
+            const style = activeLayerStyle();
+            if (!style) return nativeStroke.apply(this, args);
+            this.save();
+            if (style.color) this.strokeStyle = recolour(this.strokeStyle, style.color);
+            this.lineWidth = this.lineWidth * style.width;
+            const lw = this.lineWidth;
+            if (style.dash === 'solid') this.setLineDash([]);
+            if (style.dash === 'long') this.setLineDash([lw * 6 + 6, lw * 3 + 4]);
+            if (style.dash === 'short') this.setLineDash([lw * 2 + 3, lw * 2 + 3]);
+            if (style.dash === 'dotted') {
+                this.lineCap = 'round';
+                this.setLineDash([0, lw * 2 + 3]);
+            }
+            nativeStroke.apply(this, args);
+            this.restore();
+        };
+
+        // Fills and text take the colour too, except the dark backing plates
+        // that keep labels readable, which have to stay dark.
+        ['fill', 'fillText'].forEach(name => {
+            const native = ctx[name];
+            ctx[name] = function (...args) {
+                const style = activeLayerStyle();
+                const c = style && style.color ? parseCanvasColour(this.fillStyle) : null;
+                if (!c || (0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b) / 255 < 0.15) {
+                    return native.apply(this, args);
+                }
+                this.save();
+                this.fillStyle = recolour(this.fillStyle, style.color);
+                native.apply(this, args);
+                this.restore();
+            };
         });
+
+        // Fill in each row of the layers table: its colours, weight, style and
+        // a reset. Palette colours are shared with everything else drawn in
+        // them, the assignment swatches included.
+        const PALETTE_DEFAULTS = Object.fromEntries(Object.entries(PALETTE).map(([k, e]) => [k, e.value]));
+
+        document.querySelectorAll('.layer-row').forEach(row => {
+            const style = LAYER_STYLES[row.dataset.layer] || null;
+            const paletteKeys = row.dataset.palette ? row.dataset.palette.split(',') : [];
+
+            const colours = document.createElement('span');
+            colours.className = 'layer-colours';
+            colours.innerHTML = paletteKeys.length
+                ? paletteKeys.map(k =>
+                    `<input type="color" data-palette="${k}" value="${PALETTE[k].value}" title="${PALETTE[k].label}">`).join('')
+                : style ? `<input type="color" value="${style.swatch}" title="Colour">` : '';
+            colours.addEventListener('input', e => {
+                const key = e.target.dataset.palette;
+                if (key) {
+                    PALETTE[key].value = e.target.value;
+                    refreshAssignSwatches();
+                } else if (style) {
+                    style.color = e.target.value;
+                }
+            });
+
+            const select = (title, options, selected, onChange) => {
+                const el = document.createElement('select');
+                el.title = title;
+                el.innerHTML = options.map(([v, l]) =>
+                    `<option value="${v}"${v === selected ? ' selected' : ''}>${l}</option>`).join('');
+                el.addEventListener('change', () => onChange(el.value));
+                return el;
+            };
+            const blank = () => document.createElement('span');
+            const weight = style
+                ? select('Line weight', LAYER_WIDTHS, '1', v => { style.width = parseFloat(v); })
+                : blank();
+            const dash = style
+                ? select('Line style', LAYER_DASHES, 'drawn', v => { style.dash = v; })
+                : blank();
+
+            const reset = document.createElement('button');
+            reset.type = 'button';
+            reset.title = 'Reset this layer';
+            reset.innerHTML = '&#8634;';
+            reset.addEventListener('click', () => {
+                paletteKeys.forEach(k => { PALETTE[k].value = PALETTE_DEFAULTS[k]; });
+                colours.querySelectorAll('input').forEach(input => {
+                    input.value = input.dataset.palette ? PALETTE_DEFAULTS[input.dataset.palette] : style.swatch;
+                });
+                if (style) {
+                    style.color = null;
+                    style.width = 1;
+                    style.dash = 'drawn';
+                    weight.value = '1';
+                    dash.value = 'drawn';
+                }
+                refreshAssignSwatches();
+            });
+
+            row.append(colours, weight, dash, reset);
+        });
+
         document.getElementById('chkRadialScales').addEventListener('change', e => {
             config.showRadialScales = e.target.checked;
             resizeCanvas();
@@ -1609,8 +1946,14 @@
             if (badge) badge.textContent = `${view.zoom.toFixed(2)}\u00d7`;
         }
 
-        // Room the legend and the card's own padding need underneath the canvas
-        const CANVAS_CHROME_PX = 92;
+        // Room the card's own padding and border, plus the layout's bottom
+        // padding, need underneath the canvas. The legend is left below the
+        // fold so the chart can run to the foot of the window.
+        const CANVAS_CHROME_PX = 24;
+
+        // How far the parameter strip rises into the rim clearance below the
+        // dial. Enough to reclaim the dead band, short of the rim chips.
+        const STRIP_TUCK_PX = 20;
 
         function resizeCanvas() {
             dpr = window.devicePixelRatio || 1;
@@ -1628,16 +1971,19 @@
             const cardTop = card ? card.getBoundingClientRect().top : 0;
             const availableHeight = window.innerHeight - cardTop - CANVAS_CHROME_PX;
             const stripRatio = config.showRadialScales ? 0.28 : 0;
-            const widthFromHeight = availableHeight / (1 + stripRatio);
+            const tuck = config.showRadialScales ? STRIP_TUCK_PX : 0;
+            const widthFromHeight = (availableHeight + tuck) / (1 + stripRatio);
 
             const width = Math.max(320, Math.floor(Math.min(availableWidth, widthFromHeight)));
 
             // Reserve a band at the foot of the canvas for the parameter strip,
-            // then centre the chart in whatever is left above it.
+            // then centre the chart in whatever is left above it. The strip
+            // tucks up into the rim clearance under the dial, since the clock
+            // readout that used to sit there has moved into a corner.
             stripHeight = config.showRadialScales
                 ? Math.max(120, Math.min(210, width * 0.28))
                 : 0;
-            const height = width + stripHeight;
+            const height = width - tuck + stripHeight;
             stripTop = height - stripHeight;
 
             cssWidth = width;
@@ -2106,6 +2452,7 @@
             ctx.stroke();
 
             // Constant Resistance Circles (r), minor gradations first
+            pushLayer('resistance');
             if (config.showResistance) {
                 const drawR = (r, stroke, lw) => {
                     ctx.strokeStyle = stroke;
@@ -2134,7 +2481,10 @@
                 ]);
             }
 
+            popLayer();
+
             // Constant Reactance Arcs (±jx)
+            pushLayer('reactance');
             if (config.showReactance) {
                 ctx.save();
                 ctx.beginPath();
@@ -2179,6 +2529,8 @@
                 ]);
             }
 
+            popLayer();
+
             // Prime Center Dot (Matched Load: Z = 50 + j0, Gamma = 0)
             ctx.fillStyle = '#38bdf8';
             ctx.beginPath();
@@ -2189,10 +2541,16 @@
             // enough that the axis and the rim have left the view
             placeLabels(onCurveLabels(R), 4);
 
+            pushLayer('regions');
             drawChartRegions(R);
+            popLayer();
+            pushLayer('landmarks');
             drawTimeLandmarks(R);
+            popLayer();
 
+            pushLayer('rimScales');
             if (config.showRimScales) drawChartRimScales(R);
+            popLayer();
 
             // Clock Dial Numbers (1 to 12) & Angle Calibration
             ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
@@ -2393,7 +2751,7 @@
             ctx.restore();
         }
 
-        function drawPhasorVector(mag, phase, color, lineWidth, label, origin, endpoint, reachRim) {
+        function drawPhasorVector(mag, phase, color, lineWidth, label, origin, endpoint, reachRim, stretch = null) {
             // The arms no longer grow out of the chart centre: they emanate from
             // the hour of day, the dot riding the real axis.
             const o = origin || { x: centerX, y: centerY };
@@ -2418,7 +2776,10 @@
             // Arms bound to a triangle corner run on through it to the rim;
             // every other arm keeps its own radius, which is what puts it on its
             // own constant-VSWR circle.
-            const length = reachRim ? limit * 0.97 : Math.min(mag * scaleRadius, limit * 0.97);
+            // An arm a field is stretching goes that fraction of the way instead.
+            const length = stretch !== null
+                ? stretch * limit * 0.97
+                : reachRim ? limit * 0.97 : Math.min(mag * scaleRadius, limit * 0.97);
 
             const target = { x: o.x + length * dx, y: o.y + length * dy };
 
@@ -2543,6 +2904,7 @@
 
             // The admittance locus is the same day reflected through the origin,
             // because y = 1/z sits diametrically opposite z on the chart.
+            pushLayer('admittance');
             if (config.showAdmittance) {
                 ctx.strokeStyle = 'rgba(168, 85, 247, 0.45)';
                 ctx.lineWidth = 1.0;
@@ -2555,6 +2917,7 @@
                 ctx.stroke();
                 ctx.setLineDash([]);
             }
+            popLayer();
 
             // The trail comes in fat and bright at the current moment and tapers
             // away behind it; the rest of the day stays as a thin history line so
@@ -2873,8 +3236,21 @@
         }
 
         /** The point on the real axis that stands for the current hour of day. */
+        /**
+         * The 0-to-1 value of whichever field is assigned to stretch this
+         * length target, or null when nothing is.
+         */
+        function stretchOf(target, now) {
+            const field = lengthSources()[target];
+            if (!field) return null;
+            return Math.max(0, Math.min(1, SmithMath.fieldNormals(now)[field === 'day' ? 'date' : field]));
+        }
+
         function dayOriginOf(now) {
-            return { x: centerX + (2 * dayFractionOf(now) - 1) * scaleRadius, y: centerY };
+            // A field assigned to the hour corner slides it along the axis
+            // instead of the time of day
+            const t = stretchOf('dayAxis', now) ?? dayFractionOf(now);
+            return { x: centerX + (2 * t - 1) * scaleRadius, y: centerY };
         }
 
         /**
@@ -2894,18 +3270,32 @@
             const at = h => SmithMath.polarToCartesian(h.mag, h.phase, centerX, centerY, scaleRadius);
 
             const hour = dayOriginOf(now);
-            const second = at(hands.second);
-            const date = at(hands.date);
+            let second = at(hands.second);
+            let date = at(hands.date);
 
-            return {
-                hour,
-                second,
-                date,
-                pivot: {
-                    x: (hour.x + second.x + date.x) / 3,
-                    y: (hour.y + second.y + date.y) / 3
-                }
+            // A stretched side keeps its direction and moves its far corner
+            const toward = (from, to, length) => {
+                const dx = to.x - from.x, dy = to.y - from.y;
+                const d = Math.hypot(dx, dy) || 1;
+                return { x: from.x + (dx / d) * length, y: from.y + (dy / d) * length };
             };
+            const diameter = 2 * scaleRadius;
+            const hs = stretchOf('side:hour-second', now);
+            if (hs !== null) second = toward(hour, second, hs * diameter);
+            const hd = stretchOf('side:hour-date', now);
+            if (hd !== null) date = toward(hour, date, hd * diameter);
+            const sd = stretchOf('side:second-date', now);
+            if (sd !== null) date = toward(second, date, sd * diameter);
+
+            let pivot = {
+                x: (hour.x + second.x + date.x) / 3,
+                y: (hour.y + second.y + date.y) / 3
+            };
+            // and a stretched pivot keeps its bearing from the chart centre
+            const pv = stretchOf('pivot', now);
+            if (pv !== null) pivot = toward({ x: centerX, y: centerY }, pivot, pv * scaleRadius);
+
+            return { hour, second, date, pivot };
         }
 
         /**
@@ -3069,7 +3459,8 @@
             }
 
             // Elapsed portion of the day, drawn over the axis
-            const dotX = xOfFraction(dayFraction);
+            // The dot is the triangle's hour corner, which a field can reassign
+            const dotX = dayOriginOf(now).x;
             ctx.strokeStyle = tint('dayAxis', 0.9);
             ctx.lineWidth = 2.4;
             ctx.beginPath();
@@ -3305,51 +3696,145 @@
             return true;
         }
 
-        /**
-         * The time in plain figures, in the band between the chart and the strip.
-         *
-         * The day dot carries a small stamp of its own, but it rides the real
-         * axis and can end up anywhere; this one stays put and stays readable,
-         * including when the chart is zoomed in behind it.
-         */
-        function drawClockReadout(now) {
-            const chartBottom = baseCenterY + baseRadius;
-            const band = stripTop - chartBottom;
-            if (band < 18) return;
-
-            const cx = cssWidth / 2;
-            const cy = chartBottom + band * 0.46;
-
-            const pad = n => n.toString().padStart(2, '0');
-            const hhmmss = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(Math.floor(now.getSeconds()))}`;
-
-            const size = Math.max(14, Math.min(28, band * 0.55));
-
-            ctx.save();
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-
-            // A backing plate, so it survives a zoomed chart, or a rim chip,
-            // landing behind it
-            ctx.font = `bold ${size}px ui-monospace, monospace`;
-            const w = ctx.measureText(hhmmss).width + size * 0.9;
-            const h = size * 1.45;
-            ctx.fillStyle = 'rgba(10, 13, 20, 0.88)';
-            ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
-            ctx.lineWidth = 1;
+        function roundedRectPath(left, top, w, h, r) {
             ctx.beginPath();
-            const r = 6, left = cx - w / 2, top = cy - h / 2;
             ctx.moveTo(left + r, top);
             ctx.arcTo(left + w, top, left + w, top + h, r);
             ctx.arcTo(left + w, top + h, left, top + h, r);
             ctx.arcTo(left, top + h, left, top, r);
             ctx.arcTo(left, top, left + w, top, r);
             ctx.closePath();
-            ctx.fill();
-            ctx.stroke();
+        }
 
-            ctx.fillStyle = paint('clock');
-            ctx.fillText(hhmmss, cx, cy + 1);
+        const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+
+        /**
+         * Live readouts in the corners of the chart's square.
+         *
+         * The dial is round and the canvas is not, so the three corners the
+         * probe overlay leaves free carry the time, every wheel's reading and
+         * the interference sum. They go down before the arms and rim chips, so
+         * a chip or a zoomed-in chart that reaches that far lands on top.
+         */
+        function drawCornerPanels(now, composite, colors) {
+            const s = Math.max(0.7, Math.min(1.4, cssWidth / 740));
+            const margin = 8 * s;
+            const pad = 8 * s;
+            const rowH = 15 * s;
+            const titleH = 12 * s;
+            const bottom = stripTop - margin;
+            const p2 = n => n.toString().padStart(2, '0');
+
+            const plate = (left, top, w, h, accent) => {
+                ctx.fillStyle = 'rgba(10, 13, 20, 0.82)';
+                ctx.strokeStyle = accent;
+                ctx.lineWidth = 1;
+                roundedRectPath(left, top, w, h, 6 * s);
+                ctx.fill();
+                ctx.stroke();
+            };
+            const title = (text, x, y) => {
+                ctx.font = `600 ${8.5 * s}px -apple-system, BlinkMacSystemFont, sans-serif`;
+                ctx.fillStyle = '#64748b';
+                ctx.textAlign = 'left';
+                ctx.fillText(text, x, y);
+            };
+
+            ctx.save();
+            ctx.textBaseline = 'middle';
+
+            // Bottom left: the time and date in plain figures, and the day so far
+            {
+                const timeText = `${p2(now.getHours())}:${p2(now.getMinutes())}:${p2(Math.floor(now.getSeconds()))}`;
+                const dateText = `${WEEKDAYS[now.getDay()]} ${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}`;
+                const timeSize = 26 * s;
+                ctx.font = `bold ${timeSize}px ui-monospace, monospace`;
+                const w = ctx.measureText(timeText).width + pad * 2;
+                const h = pad * 2 + titleH + timeSize * 1.2 + 14 * s + 6 * s;
+                const left = margin, top = bottom - h;
+                plate(left, top, w, h, 'rgba(56, 189, 248, 0.35)');
+
+                let y = top + pad;
+                title('LOCAL TIME', left + pad, y + titleH / 2);
+                y += titleH;
+                ctx.font = `bold ${timeSize}px ui-monospace, monospace`;
+                ctx.fillStyle = paint('clock');
+                ctx.fillText(timeText, left + pad, y + timeSize * 0.6);
+                y += timeSize * 1.2;
+                ctx.font = `${10 * s}px ui-monospace, monospace`;
+                ctx.fillStyle = '#cbd5e1';
+                ctx.fillText(dateText, left + pad, y + 7 * s);
+                y += 14 * s + 2 * s;
+
+                const barW = w - pad * 2;
+                ctx.fillStyle = '#1e293b';
+                ctx.fillRect(left + pad, y, barW, 3 * s);
+                ctx.fillStyle = paint('dayAxis');
+                ctx.fillRect(left + pad, y, barW * dayFractionOf(now), 3 * s);
+            }
+
+            // Top right: every wheel's reading, time on the left, calendar right
+            {
+                const hands = SmithMath.handVectors(now);
+                const columns = [
+                    [['hour', colors.hour, true], ['minute', colors.minute, true], ['second', colors.second, config.showSecond]],
+                    [['date', paint('date'), config.showCalendar], ['month', paint('month'), config.showCalendar], ['year', paint('year'), config.showCalendar]]
+                ];
+                const colW = 68 * s;
+                const w = pad * 2 + colW * 2;
+                const h = pad * 2 + titleH + rowH * 3;
+                const left = cssWidth - margin - w, top = margin;
+                plate(left, top, w, h, 'rgba(255, 255, 255, 0.12)');
+                title('WHEELS', left + pad, top + pad + titleH / 2);
+
+                columns.forEach((column, c) => {
+                    column.forEach(([id, color, shown], r) => {
+                        const x = left + pad + c * colW;
+                        const y = top + pad + titleH + rowH * (r + 0.5);
+                        ctx.globalAlpha = shown ? 1 : 0.35;
+                        ctx.fillStyle = color;
+                        ctx.beginPath();
+                        ctx.arc(x + 3 * s, y, 3 * s, 0, 2 * Math.PI);
+                        ctx.fill();
+                        ctx.font = `bold ${11 * s}px ui-monospace, monospace`;
+                        ctx.textAlign = 'left';
+                        ctx.fillText(hands[id].label, x + 10 * s, y);
+                        ctx.fillStyle = '#e2e8f0';
+                        ctx.textAlign = 'right';
+                        ctx.fillText(hands[id].value, x + colW - 8 * s, y);
+                    });
+                });
+                ctx.globalAlpha = 1;
+            }
+
+            // Bottom right: the interference sum, read as a reflection coefficient
+            {
+                const rho = composite.mag;
+                const vswr = rho < 1 ? (1 + rho) / (1 - rho) : Infinity;
+                const rl = rho > 1e-5 ? -20 * Math.log10(rho) : Infinity;
+                const num = (v, d) => isFinite(v) ? v.toFixed(d) : '∞';
+                const rows = [
+                    ['|Γ|', `${rho.toFixed(3)} ∠ ${(composite.phase * 180 / Math.PI).toFixed(1)}°`],
+                    ['VSWR', `${num(vswr, 2)} : 1`],
+                    ['RL', `${num(rl, 2)} dB`]
+                ];
+                const w = pad * 2 + 160 * s;
+                const h = pad * 2 + titleH + rowH * 3;
+                const left = cssWidth - margin - w, top = bottom - h;
+                plate(left, top, w, h, tint('sigma', 0.45));
+                title('Σ INTERFERENCE SUM', left + pad, top + pad + titleH / 2);
+
+                rows.forEach(([label, value], r) => {
+                    const y = top + pad + titleH + rowH * (r + 0.5);
+                    ctx.font = `${11 * s}px ui-monospace, monospace`;
+                    ctx.textAlign = 'left';
+                    ctx.fillStyle = paint('sigma');
+                    ctx.fillText(label, left + pad, y);
+                    ctx.textAlign = 'right';
+                    ctx.fillStyle = '#e2e8f0';
+                    ctx.fillText(value, left + w - pad, y);
+                });
+            }
 
             ctx.restore();
         }
@@ -3389,7 +3874,9 @@
             drawSmithChartGrid();
 
             // 2. Draw Historical Date DNA Spiral (decorative, off by default)
+            pushLayer('spiral');
             drawDateDNASpiral(now);
+            popLayer();
 
             // 2b. The composite phasor drives the day path, the VSWR rings and
             //     the radially scaled parameter cursor. Compute it once.
@@ -3398,29 +3885,43 @@
             const compGammaIm = composite.mag * Math.sin(composite.phase);
 
             // 2c. A full day of reflection, traced by the hour and minute arms
+            pushLayer('dayPath');
             if (config.showDayPath) drawDayPath(now);
+            popLayer();
 
             // 2d. Constant-VSWR circles: radius |Gamma|, centred on the origin
+            pushLayer('vswr');
             if (config.showVswrCircles) drawVswrCircles(composite.mag);
+            popLayer();
 
             // 2e. The day bar, then the three anchors that fix the pivot. Both
             //     are drawn before the arms, because every arm hangs off the
             //     centroid of that triangle.
             const anchors = clockAnchorsOf(now);
             const dayOrigin = anchors.pivot;
+            pushLayer('landmarks');
             drawDayAxis(now);
+            popLayer();
             recordPivot(anchors.pivot, performance.now());
+            pushLayer('pivotTrace');
             drawPivotTrace();
+            popLayer();
+            pushLayer('triangle');
             drawPivotTriangle(anchors);
+            popLayer();
 
             // 3. Compute Phasor Angles
             const minPhase = (min / 60.0) * (2 * Math.PI) - (Math.PI / 2);
             const hrPhase = (hr / 12.0) * (2 * Math.PI) - (Math.PI / 2);
             const secPhase = (sec / 60.0) * (2 * Math.PI) - (Math.PI / 2);
 
-            const minMag = 0.95;
-            const hrMag = 0.60;
-            const secMag = 0.85;
+            // The arms keep their usual lengths unless a field has been
+            // assigned to set one
+            const wheelsNow = SmithMath.handVectors(now);
+            const lengthOr = (id, usual) => wheelsNow[id].lengthField ? wheelsNow[id].mag : usual;
+            const minMag = lengthOr('minute', 0.95);
+            const hrMag = lengthOr('hour', 0.60);
+            const secMag = lengthOr('second', 0.85);
 
             // Determine hand colors
             const dna = SmithMath.computeDateDNA(now);
@@ -3439,6 +3940,7 @@
             }
 
             // 4. Composite Resultant Vector (Σ)
+            pushLayer('composite');
             if (config.showComposite) {
                 const pr = plotPair();
                 const wheels = SmithMath.handVectors(now);
@@ -3465,26 +3967,44 @@
                 ctx.stroke();
                 ctx.restore();
 
-                drawPhasorVector(compMagNorm, compPhase, paint('sigma'), 5.0, 'Σ', dayOrigin);
+                drawPhasorVector(compMagNorm, compPhase, paint('sigma'), 5.0, 'Σ', dayOrigin,
+                    undefined, false, stretchOf('arm:sigma', now));
             }
+            popLayer();
+
+            // 4b. Corner readouts, under the arms and rim chips
+            drawCornerPanels(now, composite, { hour: hrColor, minute: minColor, second: secColor });
 
             // 5. Draw Clock Hands, deliberately overscaled so they stay legible
             //    on top of a full day of interference-sum history.
             // Ghosts first: centre-to-rim lines that still read against the dial,
             // each printing its own value at the edge it points to.
-            const wheelsNow = SmithMath.handVectors(now);
+            pushLayer('hour');
             drawGhostHand(hrMag, hrPhase, hrColor, `H ${wheelsNow.hour.value}`);
+            popLayer();
+            pushLayer('minute');
             drawGhostHand(minMag, minPhase, minColor, `M ${wheelsNow.minute.value}`);
+            popLayer();
+            pushLayer('second');
             if (config.showSecond) drawGhostHand(secMag, secPhase, secColor, `S ${wheelsNow.second.value}`);
+            popLayer();
 
             // Each arm is aimed at its own rim value, so the minute arm points at
             // the minute reading and the hour arm at the hour, even though both
             // now start from the pivot rather than the centre of the chart.
-            drawPhasorVector(hrMag, hrPhase, hrColor, 9.0, 'H', dayOrigin, rimPointFor(hrPhase));
-            drawPhasorVector(minMag, minPhase, minColor, 6.0, 'M', dayOrigin, rimPointFor(minPhase));
+            pushLayer('hour');
+            drawPhasorVector(hrMag, hrPhase, hrColor, 9.0, 'H', dayOrigin, rimPointFor(hrPhase),
+                false, stretchOf('arm:hour', now));
+            popLayer();
+            pushLayer('minute');
+            drawPhasorVector(minMag, minPhase, minColor, 6.0, 'M', dayOrigin, rimPointFor(minPhase),
+                false, stretchOf('arm:minute', now));
+            popLayer();
 
+            pushLayer('second');
             if (config.showSecond) {
-                drawPhasorVector(secMag, secPhase, secColor, 2.8, null, dayOrigin, anchors.second, true);
+                drawPhasorVector(secMag, secPhase, secColor, 2.8, null, dayOrigin, anchors.second, true,
+                    stretchOf('arm:second', now));
 
                 // Counterweight tail, opposite the way the arm actually points
                 const tailAngle = Math.atan2(
@@ -3501,8 +4021,10 @@
                 ctx.stroke();
                 ctx.restore();
             }
+            popLayer();
 
             // 6. Calendar wheels: date, month and year, each on its own circle
+            pushLayer('calendar');
             if (config.showCalendar) {
                 const hands = SmithMath.handVectors(now);
                 const calColors = { date: paint('date'), month: paint('month'), year: paint('year') };
@@ -3513,9 +4035,10 @@
                     drawPhasorVector(hands[id].mag, hands[id].phase, calColors[id], 4.5,
                         hands[id].label, dayOrigin,
                         id === 'date' ? anchors.date : rimPointFor(hands[id].phase),
-                        id === 'date');
+                        id === 'date', stretchOf(`arm:${id}`, now));
                 });
             }
+            popLayer();
 
             // The hub travels with the arms, so it sits on the day dot. The
             // matched centre keeps only a faint reference cross.
@@ -3533,13 +4056,13 @@
 
             ctx.restore(); // end of the chart's clip
 
-            drawClockReadout(now);
-
             // 7. Mark where the interference sum has actually reached
             drawTimePlot(now, composite);
 
             // 8. Radially scaled parameters, cursored at the composite radius
+            pushLayer('radialScales');
             drawRadialScales(composite.mag, compGammaRe);
+            popLayer();
 
             // 9. Update Dashboard & Analytics Readouts
             updateAnalytics(now, minPhase, hrPhase, minMag, hrMag, dna, mood, composite, compGammaRe, compGammaIm);
@@ -3575,7 +4098,6 @@
             const barPercent = Math.max(0, Math.min(100, (1 - (deltaDeg / 180)) * 100));
             interferenceBar.style.width = `${barPercent}%`;
 
-            const previousState = interferenceBadge.textContent;
 
             if (deltaDeg <= 20) {
                 interferenceBadge.textContent = 'CONSTRUCTIVE';
@@ -3589,17 +4111,6 @@
                 interferenceBadge.textContent = 'QUADRATURE';
                 interferenceBadge.style.color = '#38bdf8';
                 interferenceBadge.style.borderColor = 'rgba(56, 189, 248, 0.4)';
-            }
-
-            // Only on an actual change of state, and only once the animation from
-            // the last one has finished, or it would never get to play out.
-            if (previousState && previousState !== interferenceBadge.textContent) {
-                const panel = interferenceBadge.closest('.card');
-                if (panel && !panel.classList.contains('state-bounce')) {
-                    panel.classList.add('state-bounce');
-                    panel.addEventListener('animationend',
-                        () => panel.classList.remove('state-bounce'), { once: true });
-                }
             }
 
             // Hand RF Metrics
