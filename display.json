@@ -1,0 +1,13 @@
+{
+  "id": "TIME-SMITHCHART",
+  "name": "Smith Chart Clock",
+  "icon": "📉",
+  "group": "Big Picture",
+  "subGroup": "Clock Faces",
+  "kind": "web",
+  "class": "artifact",
+  "entry": "smith_chart_clock.html",
+  "description": "The RF engineer's impedance chart read as a clock: hours ride the constant-resistance circles, minutes and seconds sweep the reactance arcs, and the radially scaled parameter strip below reads SWR, return loss and reflection coefficient off the same radius.",
+  "topic": "APK.audio/Gui/Display/SmithChartClock",
+  "autostart": false
+}

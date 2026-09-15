@@ -1,0 +1,1296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smith Chart Clock & RF Chronograph</title>
+    <style>
+        :root {
+            --bg-primary: #0a0d14;
+            --bg-card: rgba(16, 22, 36, 0.85);
+            --bg-card-border: #1e293b;
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+            --accent-cyan: #38bdf8;
+            --accent-pink: #f43f5e;
+            --accent-amber: #f59e0b;
+            --accent-purple: #a855f7;
+            --accent-green: #10b981;
+            --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-primary);
+            color: var(--text-main);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        header {
+            background: linear-gradient(180deg, rgba(15, 23, 42, 0.95) 0%, rgba(10, 13, 20, 0.8) 100%);
+            border-bottom: 1px solid var(--bg-card-border);
+            padding: 12px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(8px);
+            z-index: 10;
+        }
+
+        .header-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .header-title h1 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            background: linear-gradient(90deg, #38bdf8, #a855f7, #f43f5e);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .badge {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            padding: 2px 8px;
+            border-radius: 9999px;
+            background: rgba(56, 189, 248, 0.15);
+            color: var(--accent-cyan);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            font-family: var(--font-mono);
+        }
+
+        .header-clock {
+            font-family: var(--font-mono);
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #38bdf8;
+            background: rgba(15, 23, 42, 0.6);
+            padding: 6px 14px;
+            border-radius: 6px;
+            border: 1px solid var(--bg-card-border);
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .main-layout {
+            display: grid;
+            grid-template-columns: 1fr 420px;
+            gap: 20px;
+            padding: 20px;
+            flex: 1;
+            max-width: 1600px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        @media (max-width: 1080px) {
+            .main-layout {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Canvas Stage */
+        .stage-container {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .canvas-card {
+            background: var(--bg-card);
+            border: 1px solid var(--bg-card-border);
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            min-height: 620px;
+        }
+
+        canvas {
+            max-width: 100%;
+            height: auto;
+            cursor: crosshair;
+            border-radius: 8px;
+        }
+
+        .canvas-overlay-stats {
+            position: absolute;
+            top: 24px;
+            left: 24px;
+            background: rgba(10, 13, 20, 0.75);
+            backdrop-filter: blur(8px);
+            padding: 10px 14px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            pointer-events: none;
+        }
+
+        .canvas-legend {
+            position: absolute;
+            bottom: 24px;
+            left: 24px;
+            right: 24px;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            background: rgba(10, 13, 20, 0.75);
+            backdrop-filter: blur(8px);
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            font-size: 0.8rem;
+            flex-wrap: wrap;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        /* Sidebar Panels */
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--bg-card-border);
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--bg-card-border);
+            padding-bottom: 8px;
+        }
+
+        .card-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.75px;
+            color: var(--accent-cyan);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Metrics Grid */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+
+        .metric-box {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 8px;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .metric-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .metric-val {
+            font-family: var(--font-mono);
+            font-size: 1.05rem;
+            font-weight: 700;
+        }
+
+        /* Interference Bar */
+        .interference-container {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-top: 4px;
+        }
+
+        .interference-bar-bg {
+            height: 10px;
+            background: #1e293b;
+            border-radius: 5px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .interference-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ef4444, #f59e0b, #10b981);
+            width: 50%;
+            transition: width 0.1s linear;
+        }
+
+        /* Date DNA Swatch */
+        .dna-box {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            padding: 12px;
+        }
+
+        .dna-swatch {
+            width: 44px;
+            height: 44px;
+            border-radius: 8px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 0 12px rgba(255, 255, 255, 0.2);
+            flex-shrink: 0;
+            transition: background-color 0.2s;
+        }
+
+        .dna-info {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+        }
+
+        /* Controls & Form inputs */
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .btn-row {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            background: #1e293b;
+            color: var(--text-main);
+            border: 1px solid #334155;
+            padding: 8px 14px;
+            border-radius: 6px;
+            font-size: 0.82rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        button:hover {
+            background: #334155;
+            border-color: var(--accent-cyan);
+            color: #fff;
+        }
+
+        button.active {
+            background: rgba(56, 189, 248, 0.2);
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+            font-weight: 600;
+        }
+
+        .time-slider-row {
+            display: grid;
+            grid-template-columns: 70px 1fr 60px;
+            gap: 8px;
+            align-items: center;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        input[type="range"] {
+            accent-color: var(--accent-cyan);
+            cursor: pointer;
+        }
+
+        select {
+            background: #1e293b;
+            color: var(--text-main);
+            border: 1px solid #334155;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            outline: none;
+            width: 100%;
+        }
+
+        .switch-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .switch-row input[type="checkbox"] {
+            accent-color: var(--accent-cyan);
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        /* Preset Chips */
+        .preset-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 6px;
+        }
+
+        .preset-btn {
+            font-size: 0.75rem;
+            padding: 6px 10px;
+            justify-content: center;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="header-title">
+            <h1>SMITH CHART CLOCK</h1>
+            <span class="badge">RF Phasor Chronograph</span>
+        </div>
+        <div class="header-clock" id="topClockDisplay">
+            <span id="liveDateStr">2026-08-23</span>
+            <span id="liveTimeStr" style="color: #f43f5e;">11:18:24</span>
+        </div>
+    </header>
+
+    <main class="main-layout">
+        <!-- Stage / Canvas Area -->
+        <div class="stage-container">
+            <div class="canvas-card">
+                <canvas id="smithClockCanvas" width="680" height="680"></canvas>
+                
+                <!-- Probe / Live status overlay -->
+                <div class="canvas-overlay-stats" id="probeOverlay">
+                    <span style="color: var(--accent-cyan); font-weight: bold;">RF PROBE METRICS</span>
+                    <span id="probeGamma">|Γ|: 0.95 ∠ -90.0°</span>
+                    <span id="probeZ">Z: 50.0 + j0.0 Ω</span>
+                    <span id="probeVswr">VSWR: 1.00 : 1</span>
+                </div>
+
+                <!-- Legend -->
+                <div class="canvas-legend">
+                    <div class="legend-item">
+                        <span class="legend-dot" style="background: #f43f5e;"></span>
+                        <span>Hour Vector (Slow / Low-Freq)</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-dot" style="background: #38bdf8;"></span>
+                        <span>Minute Vector (Fast / High-Freq)</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-dot" style="background: #facc15;"></span>
+                        <span>Second Needle</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-dot" style="background: #a855f7;"></span>
+                        <span>Interference Sum (Σ)</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-dot" style="background: #e11d48;"></span>
+                        <span>Date-DNA Spiral</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar / Analytics & Control Deck -->
+        <div class="sidebar">
+
+            <!-- RF Phasor & Interference Panel -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">📡 Dual-Phasor & Interference</span>
+                    <span class="badge" id="interferenceBadge">IN PHASE</span>
+                </div>
+
+                <div class="metrics-grid">
+                    <div class="metric-box">
+                        <span class="metric-label">Phase Delta (Δθ)</span>
+                        <span class="metric-val" id="valPhaseDelta" style="color: #38bdf8;">0.0°</span>
+                    </div>
+                    <div class="metric-box">
+                        <span class="metric-label">Constructive Factor</span>
+                        <span class="metric-val" id="valInterferenceRatio" style="color: #10b981;">2.00x</span>
+                    </div>
+                    <div class="metric-box">
+                        <span class="metric-label">Minute Hand VSWR</span>
+                        <span class="metric-val" id="valMinVswr" style="color: #facc15;">39.0 : 1</span>
+                    </div>
+                    <div class="metric-box">
+                        <span class="metric-label">Hour Hand Return Loss</span>
+                        <span class="metric-val" id="valHrRl" style="color: #f43f5e;">4.44 dB</span>
+                    </div>
+                </div>
+
+                <div class="interference-container">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted);">
+                        <span>Destructive (180°)</span>
+                        <span>Quadrature (90°)</span>
+                        <span>Constructive (0°)</span>
+                    </div>
+                    <div class="interference-bar-bg">
+                        <div class="interference-bar-fill" id="interferenceBar"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Date-DNA & Chronobiological Engine -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">🧬 Date DNA & Mood Engine</span>
+                    <select id="colorEngineSelect" style="width: auto; padding: 4px 8px; font-size: 0.75rem;">
+                        <option value="date-dna">Date DNA Formula</option>
+                        <option value="mood">Solar Mood Engine</option>
+                        <option value="rf-phasor" selected>RF Phasor Neon</option>
+                    </select>
+                </div>
+
+                <div class="dna-box">
+                    <div class="dna-swatch" id="dnaSwatch"></div>
+                    <div class="dna-info">
+                        <div id="dnaFormulaStr">R:208, G:123, B:26</div>
+                        <div id="dnaHexStr" style="color: var(--accent-cyan); font-weight: bold;">#d07b1a</div>
+                        <div id="moodDescStr" style="color: var(--text-muted); font-size: 0.75rem;">Late Summer (Hue: 331°, Lum: 44%)</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Time Travel & Simulation Controls -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">⏳ Time Travel & Simulation</span>
+                    <button id="btnToggleLive" class="active">● LIVE</button>
+                </div>
+
+                <div class="control-group">
+                    <div class="time-slider-row">
+                        <span>Year:</span>
+                        <input type="range" id="sliderYear" min="1900" max="2100" value="2026">
+                        <span id="labelYear">2026</span>
+                    </div>
+                    <div class="time-slider-row">
+                        <span>Month:</span>
+                        <input type="range" id="sliderMonth" min="1" max="12" value="8">
+                        <span id="labelMonth">08</span>
+                    </div>
+                    <div class="time-slider-row">
+                        <span>Day:</span>
+                        <input type="range" id="sliderDay" min="1" max="31" value="23">
+                        <span id="labelDay">23</span>
+                    </div>
+                    <div class="time-slider-row">
+                        <span>Hour:</span>
+                        <input type="range" id="sliderHour" min="0" max="23" value="11">
+                        <span id="labelHour">11:00</span>
+                    </div>
+                    <div class="time-slider-row">
+                        <span>Minute:</span>
+                        <input type="range" id="sliderMinute" min="0" max="59" value="18">
+                        <span id="labelMinute">18m</span>
+                    </div>
+                </div>
+
+                <div style="margin-top: 4px;">
+                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 6px;">HISTORICAL PRESETS:</div>
+                    <div class="preset-grid">
+                        <button class="preset-btn" onclick="applyPreset('now')">Current Live</button>
+                        <button class="preset-btn" onclick="applyPreset('smith1939')">Smith 1939</button>
+                        <button class="preset-btn" onclick="applyPreset('radar1944')">Apr 4, 1944 (Radar)</button>
+                        <button class="preset-btn" onclick="applyPreset('apollo1969')">Moon Landing 1969</button>
+                        <button class="preset-btn" onclick="applyPreset('tech1999')">Jan 22, 1999 (Tech)</button>
+                        <button class="preset-btn" onclick="applyPreset('y2k')">Jan 1, 2000 (Y2K)</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Display & Grid Options -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">⚙️ Chart & Vector Options</span>
+                </div>
+
+                <div class="control-group">
+                    <div class="switch-row">
+                        <span>Historical Date-DNA Spiral</span>
+                        <input type="checkbox" id="chkSpiral" checked>
+                    </div>
+                    <div class="switch-row">
+                        <span>Composite Resultant Vector (Σ)</span>
+                        <input type="checkbox" id="chkComposite" checked>
+                    </div>
+                    <div class="switch-row">
+                        <span>Second Hand Sweep</span>
+                        <input type="checkbox" id="chkSecond" checked>
+                    </div>
+                    <div class="switch-row">
+                        <span>Reactance Arcs (±jx)</span>
+                        <input type="checkbox" id="chkReactance" checked>
+                    </div>
+                    <div class="switch-row">
+                        <span>Resistance Circles (r)</span>
+                        <input type="checkbox" id="chkResistance" checked>
+                    </div>
+                </div>
+
+                <div class="btn-row" style="margin-top: 8px;">
+                    <button onclick="exportSnapshot()">📷 Snapshot PNG</button>
+                    <button onclick="toggleAudioTick()" id="btnAudio">🔇 Audio Tick</button>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <script>
+        // ==========================================
+        // 1. RF MATH & SMITH CHART COMPUTATIONS
+        // ==========================================
+        class SmithMath {
+            static polarToCartesian(mag, phase, centerX, centerY, scaleRadius) {
+                return {
+                    x: centerX + (mag * scaleRadius * Math.cos(phase)),
+                    y: centerY + (mag * scaleRadius * Math.sin(phase))
+                };
+            }
+
+            static cartesianToPolar(x, y, centerX, centerY, scaleRadius) {
+                const dx = (x - centerX) / scaleRadius;
+                const dy = (y - centerY) / scaleRadius;
+                const mag = Math.min(1.0, Math.sqrt(dx * dx + dy * dy));
+                const phase = Math.atan2(dy, dx);
+                return { mag, phase };
+            }
+
+            static gammaToImpedance(gammaRe, gammaIm, z0 = 50) {
+                const denom = (1 - gammaRe) * (1 - gammaRe) + (gammaIm * gammaIm);
+                if (denom < 1e-7) return { r: Infinity, x: Infinity, R: Infinity, X: Infinity };
+
+                const r = (1 - (gammaRe * gammaRe) - (gammaIm * gammaIm)) / denom;
+                const x = (2 * gammaIm) / denom;
+                return {
+                    r: Math.max(0, r),
+                    x: x,
+                    R: Math.max(0, r * z0),
+                    X: x * z0
+                };
+            }
+
+            static computeDateDNA(date) {
+                const month = date.getMonth() + 1;
+                const day = date.getDate();
+                const year = date.getFullYear();
+                const yearLastTwo = Math.abs(year) % 100;
+
+                const r = Math.min(255, 200 + month);
+                const g = Math.min(255, 100 + day);
+                const b = Math.min(255, yearLastTwo);
+
+                const hex = '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
+                return { r, g, b, hex, formula: `R:200+${month}=${r}, G:100+${day}=${g}, B:${yearLastTwo}` };
+            }
+
+            static computeMood(date) {
+                const start = new Date(date.getFullYear(), 0, 0);
+                const diff = date.getTime() - start.getTime();
+                const dayOfYear = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+                let hue = ((dayOfYear / 365.25) * 360) + 100;
+                hue = (hue % 360 + 360) % 360;
+
+                const hours = date.getHours() + (date.getMinutes() / 60) + (date.getSeconds() / 3600);
+                const lightness = 30 + (40 * Math.sin((hours / 24) * Math.PI));
+
+                let season = 'Winter';
+                if (hue >= 60 && hue < 150) season = 'Spring';
+                else if (hue >= 150 && hue < 270) season = 'Summer';
+                else if (hue >= 270 && hue < 350) season = 'Late Summer/Autumn';
+
+                return {
+                    hue,
+                    lightness,
+                    hsl: `hsl(${Math.round(hue)}, 85%, ${Math.round(lightness)}%)`,
+                    season
+                };
+            }
+        }
+
+        // ==========================================
+        // 2. SMITH CHART CLOCK APPLICATION STATE
+        // ==========================================
+        const canvas = document.getElementById('smithClockCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let isLive = true;
+        let simDate = new Date();
+        let audioContext = null;
+        let audioTickEnabled = false;
+        let lastTickedSecond = -1;
+
+        // Configuration
+        const config = {
+            z0: 50,
+            showSpiral: true,
+            showComposite: true,
+            showSecond: true,
+            showReactance: true,
+            showResistance: true,
+            colorEngine: 'rf-phasor', // 'date-dna' | 'mood' | 'rf-phasor'
+            spiralStartYear: 1900,
+            spiralEndYear: 2050
+        };
+
+        // DOM Elements
+        const liveDateStr = document.getElementById('liveDateStr');
+        const liveTimeStr = document.getElementById('liveTimeStr');
+        const btnToggleLive = document.getElementById('btnToggleLive');
+        const sliderYear = document.getElementById('sliderYear');
+        const sliderMonth = document.getElementById('sliderMonth');
+        const sliderDay = document.getElementById('sliderDay');
+        const sliderHour = document.getElementById('sliderHour');
+        const sliderMinute = document.getElementById('sliderMinute');
+
+        const labelYear = document.getElementById('labelYear');
+        const labelMonth = document.getElementById('labelMonth');
+        const labelDay = document.getElementById('labelDay');
+        const labelHour = document.getElementById('labelHour');
+        const labelMinute = document.getElementById('labelMinute');
+
+        const valPhaseDelta = document.getElementById('valPhaseDelta');
+        const valInterferenceRatio = document.getElementById('valInterferenceRatio');
+        const valMinVswr = document.getElementById('valMinVswr');
+        const valHrRl = document.getElementById('valHrRl');
+        const interferenceBadge = document.getElementById('interferenceBadge');
+        const interferenceBar = document.getElementById('interferenceBar');
+
+        const dnaSwatch = document.getElementById('dnaSwatch');
+        const dnaFormulaStr = document.getElementById('dnaFormulaStr');
+        const dnaHexStr = document.getElementById('dnaHexStr');
+        const moodDescStr = document.getElementById('moodDescStr');
+        const colorEngineSelect = document.getElementById('colorEngineSelect');
+
+        const probeOverlay = document.getElementById('probeOverlay');
+        const probeGamma = document.getElementById('probeGamma');
+        const probeZ = document.getElementById('probeZ');
+        const probeVswr = document.getElementById('probeVswr');
+
+        // Switches
+        document.getElementById('chkSpiral').addEventListener('change', e => config.showSpiral = e.target.checked);
+        document.getElementById('chkComposite').addEventListener('change', e => config.showComposite = e.target.checked);
+        document.getElementById('chkSecond').addEventListener('change', e => config.showSecond = e.target.checked);
+        document.getElementById('chkReactance').addEventListener('change', e => config.showReactance = e.target.checked);
+        document.getElementById('chkResistance').addEventListener('change', e => config.showResistance = e.target.checked);
+        colorEngineSelect.addEventListener('change', e => config.colorEngine = e.target.value);
+
+        // Resize Canvas with DevicePixelRatio
+        let dpr = window.devicePixelRatio || 1;
+        let centerX = 340;
+        let centerY = 340;
+        let scaleRadius = 290;
+
+        function resizeCanvas() {
+            dpr = window.devicePixelRatio || 1;
+            const size = Math.min(680, window.innerWidth - 480);
+            const actualSize = Math.max(320, size);
+            
+            canvas.style.width = actualSize + 'px';
+            canvas.style.height = actualSize + 'px';
+            canvas.width = actualSize * dpr;
+            canvas.height = actualSize * dpr;
+
+            ctx.resetTransform?.();
+            ctx.scale(dpr, dpr);
+
+            centerX = actualSize / 2;
+            centerY = actualSize / 2;
+            scaleRadius = (actualSize / 2) - 34;
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Audio Oscillator Ticking
+        function playTickSound() {
+            if (!audioTickEnabled) return;
+            try {
+                if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                if (audioContext.state === 'suspended') audioContext.resume();
+
+                const osc = audioContext.createOscillator();
+                const gain = audioContext.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(1800, audioContext.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(300, audioContext.currentTime + 0.03);
+
+                gain.gain.setValueAtTime(0.06, audioContext.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.03);
+
+                osc.connect(gain);
+                gain.connect(audioContext.destination);
+                osc.start();
+                osc.stop(audioContext.currentTime + 0.035);
+            } catch (e) {}
+        }
+
+        window.toggleAudioTick = function() {
+            audioTickEnabled = !audioTickEnabled;
+            const btn = document.getElementById('btnAudio');
+            if (audioTickEnabled) {
+                btn.classList.add('active');
+                btn.innerHTML = '🔊 Audio Tick ON';
+                if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            } else {
+                btn.classList.remove('active');
+                btn.innerHTML = '🔇 Audio Tick';
+            }
+        };
+
+        // Live Toggle & Slider bindings
+        btnToggleLive.addEventListener('click', () => {
+            isLive = !isLive;
+            if (isLive) {
+                btnToggleLive.classList.add('active');
+                btnToggleLive.innerHTML = '● LIVE';
+            } else {
+                btnToggleLive.classList.remove('active');
+                btnToggleLive.innerHTML = '⏸ CUSTOM';
+            }
+        });
+
+        function syncSlidersFromDate(d) {
+            sliderYear.value = d.getFullYear();
+            sliderMonth.value = d.getMonth() + 1;
+            sliderDay.value = d.getDate();
+            sliderHour.value = d.getHours();
+            sliderMinute.value = d.getMinutes();
+
+            labelYear.textContent = d.getFullYear();
+            labelMonth.textContent = (d.getMonth() + 1).toString().padStart(2, '0');
+            labelDay.textContent = d.getDate().toString().padStart(2, '0');
+            labelHour.textContent = d.getHours().toString().padStart(2, '0') + ':00';
+            labelMinute.textContent = d.getMinutes().toString().padStart(2, '0') + 'm';
+        }
+
+        [sliderYear, sliderMonth, sliderDay, sliderHour, sliderMinute].forEach(slider => {
+            slider.addEventListener('input', () => {
+                isLive = false;
+                btnToggleLive.classList.remove('active');
+                btnToggleLive.innerHTML = '⏸ CUSTOM';
+
+                simDate = new Date(
+                    parseInt(sliderYear.value),
+                    parseInt(sliderMonth.value) - 1,
+                    parseInt(sliderDay.value),
+                    parseInt(sliderHour.value),
+                    parseInt(sliderMinute.value),
+                    0
+                );
+                syncSlidersFromDate(simDate);
+            });
+        });
+
+        // Historical Presets
+        window.applyPreset = function(type) {
+            isLive = false;
+            btnToggleLive.classList.remove('active');
+            btnToggleLive.innerHTML = '⏸ CUSTOM';
+
+            switch (type) {
+                case 'now':
+                    isLive = true;
+                    btnToggleLive.classList.add('active');
+                    btnToggleLive.innerHTML = '● LIVE';
+                    simDate = new Date();
+                    break;
+                case 'smith1939':
+                    simDate = new Date(1939, 0, 1, 10, 30, 0);
+                    break;
+                case 'radar1944':
+                    simDate = new Date(1944, 3, 4, 14, 15, 0); // April 4, 1944
+                    break;
+                case 'apollo1969':
+                    simDate = new Date(1969, 6, 20, 20, 17, 0); // July 20, 1969
+                    break;
+                case 'tech1999':
+                    simDate = new Date(1999, 0, 22, 9, 45, 0); // Jan 22, 1999
+                    break;
+                case 'y2k':
+                    simDate = new Date(2000, 0, 1, 0, 0, 0);
+                    break;
+            }
+            syncSlidersFromDate(simDate);
+        };
+
+        // Snapshot Export
+        window.exportSnapshot = function() {
+            const link = document.createElement('a');
+            link.download = `smith-chart-clock-${Date.now()}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        };
+
+        // Mouse hover probe on canvas
+        canvas.addEventListener('mousemove', e => {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.clientX - rect.left;
+            const clientY = e.clientY - rect.top;
+
+            const polar = SmithMath.cartesianToPolar(clientX, clientY, centerX, centerY, scaleRadius);
+            const gammaRe = polar.mag * Math.cos(polar.phase);
+            const gammaIm = polar.mag * Math.sin(polar.phase);
+            const imp = SmithMath.gammaToImpedance(gammaRe, gammaIm, config.z0);
+
+            const vswr = polar.mag >= 0.999 ? '∞' : ((1 + polar.mag) / (1 - polar.mag)).toFixed(2);
+            const angleDeg = (polar.phase * 180 / Math.PI).toFixed(1);
+
+            probeGamma.textContent = `|Γ|: ${polar.mag.toFixed(3)} ∠ ${angleDeg}°`;
+            probeZ.textContent = `Z: ${imp.R.toFixed(1)} ${imp.X >= 0 ? '+' : '-'} j${Math.abs(imp.X).toFixed(1)} Ω`;
+            probeVswr.textContent = `VSWR: ${vswr} : 1`;
+        });
+
+        // ==========================================
+        // 3. RENDER ENGINE & VISUAL LOOP
+        // ==========================================
+        function drawSmithChartGrid() {
+            const R = scaleRadius;
+
+            // Clear Background
+            ctx.fillStyle = '#0a0d14';
+            ctx.fillRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+
+            // Outer Unit Circle (|Gamma| = 1.0)
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 2.0;
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, R, 0, 2 * Math.PI);
+            ctx.stroke();
+
+            // Real Axis (Horizontal)
+            ctx.strokeStyle = '#0284c7';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(centerX - R, centerY);
+            ctx.lineTo(centerX + R, centerY);
+            ctx.stroke();
+
+            // Constant Resistance Circles (r)
+            if (config.showResistance) {
+                const resistances = [0.2, 0.5, 1.0, 2.0, 5.0];
+                resistances.forEach(r => {
+                    const circleRadius = R / (1 + r);
+                    const circleCenterX = centerX + (r / (1 + r)) * R;
+
+                    ctx.strokeStyle = (r === 1.0) ? '#475569' : '#1e293b';
+                    ctx.lineWidth = (r === 1.0) ? 1.4 : 0.9;
+                    ctx.beginPath();
+                    ctx.arc(circleCenterX, centerY, circleRadius, 0, 2 * Math.PI);
+                    ctx.stroke();
+
+                    // Label on horizontal axis
+                    ctx.fillStyle = '#64748b';
+                    ctx.font = '9px ui-monospace, monospace';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'bottom';
+                    const lx = centerX + ((r - 1) / (r + 1)) * R;
+                    if (Math.abs(lx - centerX) > 8 && lx < centerX + R - 15) {
+                        ctx.fillText(`r=${r}`, lx, centerY - 2);
+                    }
+                });
+            }
+
+            // Constant Reactance Arcs (±jx)
+            if (config.showReactance) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, R, 0, 2 * Math.PI);
+                ctx.clip();
+
+                const reactances = [0.2, 0.5, 1.0, 2.0, 5.0];
+                reactances.forEach(x => {
+                    [x, -x].forEach(val => {
+                        const arcRadius = (1 / Math.abs(val)) * R;
+                        const arcCenterY = centerY - (1 / val) * R;
+                        const arcCenterX = centerX + R;
+
+                        ctx.strokeStyle = (Math.abs(val) === 1.0) ? '#334155' : '#172554';
+                        ctx.lineWidth = (Math.abs(val) === 1.0) ? 1.2 : 0.8;
+                        ctx.setLineDash([3, 3]);
+
+                        ctx.beginPath();
+                        ctx.arc(arcCenterX, arcCenterY, arcRadius, 0, 2 * Math.PI);
+                        ctx.stroke();
+                    });
+                });
+
+                ctx.setLineDash([]);
+                ctx.restore();
+            }
+
+            // Prime Center Dot (Matched Load: Z = 50 + j0, Gamma = 0)
+            ctx.fillStyle = '#38bdf8';
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, 4, 0, 2 * Math.PI);
+            ctx.fill();
+
+            // Clock Dial Numbers (1 to 12) & Angle Calibration
+            ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
+            ctx.fillStyle = '#94a3b8';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            for (let i = 0; i < 12; i++) {
+                const angle = (i / 12) * (2 * Math.PI) - (Math.PI / 2);
+                const rTickInner = R + 3;
+                const rTickOuter = R + 8;
+                const rText = R + 18;
+
+                ctx.strokeStyle = '#38bdf8';
+                ctx.lineWidth = (i % 3 === 0) ? 2 : 1;
+                ctx.beginPath();
+                ctx.moveTo(centerX + rTickInner * Math.cos(angle), centerY + rTickInner * Math.sin(angle));
+                ctx.lineTo(centerX + rTickOuter * Math.cos(angle), centerY + rTickOuter * Math.sin(angle));
+                ctx.stroke();
+
+                const num = i === 0 ? 12 : i;
+                ctx.fillText(num.toString(), centerX + rText * Math.cos(angle), centerY + rText * Math.sin(angle));
+            }
+        }
+
+        function drawDateDNASpiral(currentDate) {
+            if (!config.showSpiral) return;
+
+            const curYear = currentDate.getFullYear();
+            const startYear = config.spiralStartYear;
+            const endYear = config.spiralEndYear;
+            const span = endYear - startYear;
+
+            const yearsElapsed = (curYear - startYear) + (currentDate.getMonth() / 12) + (currentDate.getDate() / 365.25);
+            if (yearsElapsed <= 0) return;
+
+            const steps = Math.floor(yearsElapsed * 16);
+            let prevPt = null;
+
+            ctx.save();
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            for (let i = 0; i <= steps; i++) {
+                const prog = i / steps;
+                const simY = startYear + (prog * yearsElapsed);
+                const simYInt = Math.floor(simY);
+                const frac = simY - simYInt;
+                const simDay = Math.floor(frac * 365.25);
+
+                const normRadius = Math.min(0.96, Math.max(0.02, (simY - startYear) / span));
+                const angle = (simDay / 365.25) * (2 * Math.PI) - (Math.PI / 2);
+
+                const pt = {
+                    x: centerX + (normRadius * scaleRadius * Math.cos(angle)),
+                    y: centerY + (normRadius * scaleRadius * Math.sin(angle))
+                };
+
+                if (prevPt) {
+                    const sDate = new Date(simYInt, 0, Math.max(1, simDay));
+                    let color;
+
+                    if (config.colorEngine === 'date-dna') {
+                        const dna = SmithMath.computeDateDNA(sDate);
+                        color = `rgba(${dna.r}, ${dna.g}, ${dna.b}, 0.75)`;
+                    } else if (config.colorEngine === 'mood') {
+                        const mood = SmithMath.computeMood(sDate);
+                        color = mood.hsl;
+                    } else {
+                        const hue = (simY * 15) % 360;
+                        color = `hsla(${hue}, 90%, 60%, 0.7)`;
+                    }
+
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = 2.0;
+                    ctx.beginPath();
+                    ctx.moveTo(prevPt.x, prevPt.y);
+                    ctx.lineTo(pt.x, pt.y);
+                    ctx.stroke();
+                }
+
+                prevPt = pt;
+            }
+
+            // Glow tip
+            if (prevPt) {
+                const dna = SmithMath.computeDateDNA(currentDate);
+                ctx.fillStyle = dna.hex;
+                ctx.shadowColor = dna.hex;
+                ctx.shadowBlur = 14;
+                ctx.beginPath();
+                ctx.arc(prevPt.x, prevPt.y, 4.5, 0, 2 * Math.PI);
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+
+            ctx.restore();
+        }
+
+        function drawPhasorVector(mag, phase, color, lineWidth, label) {
+            const target = SmithMath.polarToCartesian(mag, phase, centerX, centerY, scaleRadius);
+
+            ctx.save();
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 8;
+            ctx.strokeStyle = color;
+            ctx.lineWidth = lineWidth;
+            ctx.lineCap = 'round';
+
+            // Shaft
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY);
+            ctx.lineTo(target.x, target.y);
+            ctx.stroke();
+
+            // Arrow head
+            const headLen = Math.max(7, lineWidth * 2.2);
+            const arrowAngle = Math.PI / 7;
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.moveTo(target.x, target.y);
+            ctx.lineTo(target.x - headLen * Math.cos(phase - arrowAngle), target.y - headLen * Math.sin(phase - arrowAngle));
+            ctx.lineTo(target.x - headLen * Math.cos(phase + arrowAngle), target.y - headLen * Math.sin(phase + arrowAngle));
+            ctx.closePath();
+            ctx.fill();
+
+            if (label) {
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = color;
+                ctx.font = 'bold 11px ui-monospace, monospace';
+                const dist = 14;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(label, target.x + dist * Math.cos(phase), target.y + dist * Math.sin(phase));
+            }
+
+            ctx.restore();
+            return target;
+        }
+
+        // Main Animation Frame
+        function frame() {
+            if (isLive) {
+                simDate = new Date();
+                syncSlidersFromDate(simDate);
+            }
+
+            const now = simDate;
+            const ms = now.getMilliseconds();
+            const sec = now.getSeconds() + (ms / 1000);
+            const min = now.getMinutes() + (sec / 60);
+            const hr = (now.getHours() % 12) + (min / 60);
+
+            // Tick Audio trigger
+            const currentSecInt = Math.floor(sec);
+            if (currentSecInt !== lastTickedSecond) {
+                lastTickedSecond = currentSecInt;
+                playTickSound();
+            }
+
+            // 1. Draw Smith Background Grid
+            drawSmithChartGrid();
+
+            // 2. Draw Historical Date DNA Spiral
+            drawDateDNASpiral(now);
+
+            // 3. Compute Phasor Angles
+            const minPhase = (min / 60.0) * (2 * Math.PI) - (Math.PI / 2);
+            const hrPhase = (hr / 12.0) * (2 * Math.PI) - (Math.PI / 2);
+            const secPhase = (sec / 60.0) * (2 * Math.PI) - (Math.PI / 2);
+
+            const minMag = 0.95;
+            const hrMag = 0.60;
+            const secMag = 0.85;
+
+            // Determine hand colors
+            const dna = SmithMath.computeDateDNA(now);
+            const mood = SmithMath.computeMood(now);
+
+            let hrColor = '#f43f5e';
+            let minColor = '#38bdf8';
+            let secColor = '#facc15';
+
+            if (config.colorEngine === 'date-dna') {
+                hrColor = dna.hex;
+                minColor = `rgba(${dna.r}, ${dna.g}, ${dna.b}, 0.85)`;
+            } else if (config.colorEngine === 'mood') {
+                hrColor = mood.hsl;
+                minColor = `hsla(${Math.round(mood.hue)}, 85%, ${Math.round(mood.lightness)}%, 0.75)`;
+            }
+
+            // 4. Composite Resultant Vector (Σ)
+            if (config.showComposite) {
+                const minTarget = SmithMath.polarToCartesian(minMag, minPhase, centerX, centerY, scaleRadius);
+                const hrTarget = SmithMath.polarToCartesian(hrMag, hrPhase, centerX, centerY, scaleRadius);
+
+                const compX = (minTarget.x - centerX) + (hrTarget.x - centerX);
+                const compY = (minTarget.y - centerY) + (hrTarget.y - centerY);
+
+                const compMagPx = Math.sqrt(compX * compX + compY * compY);
+                const compMagNorm = Math.min(1.0, compMagPx / (scaleRadius * 1.55));
+                const compPhase = Math.atan2(compY, compX);
+
+                // Parallelogram trace
+                ctx.save();
+                ctx.strokeStyle = 'rgba(168, 85, 247, 0.4)';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([3, 3]);
+                ctx.beginPath();
+                ctx.moveTo(minTarget.x, minTarget.y);
+                ctx.lineTo(centerX + compX, centerY + compY);
+                ctx.lineTo(hrTarget.x, hrTarget.y);
+                ctx.stroke();
+                ctx.restore();
+
+                drawPhasorVector(compMagNorm, compPhase, '#a855f7', 2.0, 'Σ');
+            }
+
+            // 5. Draw Clock Hands
+            drawPhasorVector(hrMag, hrPhase, hrColor, 4.5, 'H');
+            drawPhasorVector(minMag, minPhase, minColor, 3.0, 'M');
+
+            if (config.showSecond) {
+                drawPhasorVector(secMag, secPhase, secColor, 1.5, null);
+
+                // Counterweight tail
+                const tailAngle = secPhase + Math.PI;
+                const tailLen = scaleRadius * 0.18;
+                ctx.save();
+                ctx.strokeStyle = secColor;
+                ctx.lineWidth = 2.5;
+                ctx.beginPath();
+                ctx.moveTo(centerX, centerY);
+                ctx.lineTo(centerX + tailLen * Math.cos(tailAngle), centerY + tailLen * Math.sin(tailAngle));
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            // Center Pin
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, 3.5, 0, 2 * Math.PI);
+            ctx.fill();
+
+            // 6. Update Dashboard & Analytics Readouts
+            updateAnalytics(now, minPhase, hrPhase, minMag, hrMag, dna, mood);
+
+            requestAnimationFrame(frame);
+        }
+
+        function updateAnalytics(now, minPhase, hrPhase, minMag, hrMag, dna, mood) {
+            // Header display
+            const yr = now.getFullYear();
+            const mo = (now.getMonth() + 1).toString().padStart(2, '0');
+            const dy = now.getDate().toString().padStart(2, '0');
+            const h = now.getHours().toString().padStart(2, '0');
+            const m = now.getMinutes().toString().padStart(2, '0');
+            const s = Math.floor(now.getSeconds()).toString().padStart(2, '0');
+
+            liveDateStr.textContent = `${yr}-${mo}-${dy}`;
+            liveTimeStr.textContent = `${h}:${m}:${s}`;
+
+            // Phase Difference Delta
+            let delta = Math.abs(minPhase - hrPhase);
+            delta = delta % (2 * Math.PI);
+            if (delta > Math.PI) delta = 2 * Math.PI - delta;
+            const deltaDeg = (delta * 180 / Math.PI);
+
+            valPhaseDelta.textContent = `${deltaDeg.toFixed(1)}°`;
+
+            // Interference ratio: 2 * cos(delta/2)
+            const ratio = 2 * Math.cos(delta / 2);
+            valInterferenceRatio.textContent = `${ratio.toFixed(2)}x`;
+
+            // Interference State Badge & Progress Bar
+            const barPercent = Math.max(0, Math.min(100, (1 - (deltaDeg / 180)) * 100));
+            interferenceBar.style.width = `${barPercent}%`;
+
+            if (deltaDeg <= 20) {
+                interferenceBadge.textContent = 'CONSTRUCTIVE';
+                interferenceBadge.style.color = '#10b981';
+                interferenceBadge.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+            } else if (deltaDeg >= 160) {
+                interferenceBadge.textContent = 'DESTRUCTIVE';
+                interferenceBadge.style.color = '#ef4444';
+                interferenceBadge.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+            } else {
+                interferenceBadge.textContent = 'QUADRATURE';
+                interferenceBadge.style.color = '#38bdf8';
+                interferenceBadge.style.borderColor = 'rgba(56, 189, 248, 0.4)';
+            }
+
+            // Hand RF Metrics
+            const minVswr = ((1 + minMag) / (1 - minMag)).toFixed(1);
+            valMinVswr.textContent = `${minVswr} : 1`;
+
+            const hrRl = (-20 * Math.log10(hrMag)).toFixed(2);
+            valHrRl.textContent = `${hrRl} dB`;
+
+            // Date DNA Swatch
+            dnaSwatch.style.backgroundColor = dna.hex;
+            dnaFormulaStr.textContent = dna.formula;
+            dnaHexStr.textContent = `${dna.hex.toUpperCase()} | RGB(${dna.r}, ${dna.g}, ${dna.b})`;
+            moodDescStr.textContent = `${mood.season} Season (Hue: ${Math.round(mood.hue)}°, Lum: ${Math.round(mood.lightness)}%)`;
+        }
+
+        // Start Clock
+        requestAnimationFrame(frame);
+    </script>
+</body>
+</html>
