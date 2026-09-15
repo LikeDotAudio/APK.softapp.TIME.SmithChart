@@ -123,9 +123,39 @@ export interface SmithChartClockOptions {
     showRimScales?: boolean;
     /** Minutes between day-path samples. 1 = every minute (1440 points). */
     dayPathSampleMinutes?: number;
+    /** Which two wheels are crossed to make the plotted locus. See PLOT_PAIRS. */
+    plotPair?: string;
     spiralStartYear?: number;
     spiralEndYear?: number;
     colorEngine?: 'date-dna' | 'mood' | 'rf-phasor' | 'custom';
+}
+
+/**
+ * Which two wheels are crossed to make the plotted locus.
+ *
+ * The trail has always been the hour and minute arms added together; any other
+ * pair is the same construction on different wheels, so the chart can be asked
+ * to correlate whichever two the reader cares about.
+ */
+export interface PlotPairDef {
+    id: string;
+    label: string;
+    a: HandVector['id'];
+    b: HandVector['id'];
+}
+
+export const PLOT_PAIRS: PlotPairDef[] = [
+    { id: 'hour+minute', label: 'Hour × Minute', a: 'hour', b: 'minute' },
+    { id: 'hour+second', label: 'Hour × Second', a: 'hour', b: 'second' },
+    { id: 'minute+second', label: 'Minute × Second', a: 'minute', b: 'second' },
+    { id: 'hour+date', label: 'Hour × Date', a: 'hour', b: 'date' },
+    { id: 'minute+date', label: 'Minute × Date', a: 'minute', b: 'date' },
+    { id: 'date+month', label: 'Date × Month', a: 'date', b: 'month' },
+    { id: 'month+year', label: 'Month × Year', a: 'month', b: 'year' }
+];
+
+export function plotPairById(id: string): PlotPairDef {
+    return PLOT_PAIRS.find(pair => pair.id === id) ?? PLOT_PAIRS[0];
 }
 
 /** Magnitudes of each wheel. Slower wheels sit closer to the matched centre. */
@@ -390,18 +420,18 @@ export class SmithChartRFMath {
      * This single point is what the day path traces, what the radially scaled
      * parameter cursor reads, and what the live formula panel substitutes into.
      */
-    public static compositePolarForTime(date: Date): PolarCoordinate {
-        const seconds = date.getSeconds() + date.getMilliseconds() / 1000;
-        const minutes = date.getMinutes() + seconds / 60;
-        const hours12 = (date.getHours() % 12) + minutes / 60;
+    public static compositePolarForTime(
+        date: Date,
+        pair: PlotPairDef = PLOT_PAIRS[0]
+    ): PolarCoordinate {
+        const hands = this.handVectorsForTime(date);
+        const a = hands.find(h => h.id === pair.a)!.polar;
+        const b = hands.find(h => h.id === pair.b)!.polar;
 
-        const minPhase = (minutes / 60) * (2 * Math.PI) - (Math.PI / 2);
-        const hrPhase = (hours12 / 12) * (2 * Math.PI) - (Math.PI / 2);
+        const sumRe = a.magnitude * Math.cos(a.phase) + b.magnitude * Math.cos(b.phase);
+        const sumIm = a.magnitude * Math.sin(a.phase) + b.magnitude * Math.sin(b.phase);
 
-        const sumRe = HAND_MAGNITUDES.minute * Math.cos(minPhase) + HAND_MAGNITUDES.hour * Math.cos(hrPhase);
-        const sumIm = HAND_MAGNITUDES.minute * Math.sin(minPhase) + HAND_MAGNITUDES.hour * Math.sin(hrPhase);
-
-        const norm = HAND_MAGNITUDES.minute + HAND_MAGNITUDES.hour; // 1.55, the reachable maximum
+        const norm = a.magnitude + b.magnitude; // the reachable maximum for this pair
         return {
             magnitude: Math.min(1.0, Math.sqrt(sumRe * sumRe + sumIm * sumIm) / norm),
             phase: Math.atan2(sumIm, sumRe)
@@ -415,7 +445,11 @@ export class SmithChartRFMath {
      * minute arm positions into Gamma, then into z = (1+G)/(1-G), y = 1/z and
      * VSWR = (1+|G|)/(1-|G|). The result is the locus the clock draws over 24 h.
      */
-    public static buildDayPath(date: Date, sampleMinutes: number = 2): DayPathSummary {
+    public static buildDayPath(
+        date: Date,
+        sampleMinutes: number = 2,
+        pair: PlotPairDef = PLOT_PAIRS[0]
+    ): DayPathSummary {
         const step = Math.max(1, Math.min(60, Math.round(sampleMinutes)));
         const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
 
@@ -426,7 +460,7 @@ export class SmithChartRFMath {
         for (let minuteOfDay = 0; minuteOfDay <= 1440; minuteOfDay += step) {
             const m = Math.min(1440, minuteOfDay);
             const stamp = new Date(dayStart.getTime() + m * 60000);
-            const polar = this.compositePolarForTime(stamp);
+            const polar = this.compositePolarForTime(stamp, pair);
             const gamma = this.polarToGamma(polar);
             const rho = polar.magnitude;
 
@@ -718,6 +752,7 @@ export class SmithChartClock {
             showRadialScales: options?.showRadialScales ?? true,
             showRimScales: options?.showRimScales ?? true,
             dayPathSampleMinutes: options?.dayPathSampleMinutes ?? 2,
+            plotPair: options?.plotPair ?? PLOT_PAIRS[0].id,
             spiralStartYear: options?.spiralStartYear ?? 1900,
             spiralEndYear: options?.spiralEndYear ?? 2050,
             colorEngine: options?.colorEngine ?? 'rf-phasor'
@@ -1195,6 +1230,11 @@ export class SmithChartClock {
         return target;
     }
 
+    /** The pair of wheels currently crossed to make the plotted locus. */
+    public plotPair(): PlotPairDef {
+        return plotPairById(this.options.plotPair);
+    }
+
     /**
      * Accent colours for the overlays that the base palette does not name.
      */
@@ -1220,9 +1260,11 @@ export class SmithChartClock {
      * calendar day or the sample rate actually changes.
      */
     public getDayPath(date: Date = this.getEffectiveTime()): DayPathSummary {
-        const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}-${this.options.dayPathSampleMinutes}`;
+        const pair = this.plotPair();
+        const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
+            + `-${this.options.dayPathSampleMinutes}-${pair.id}`;
         if (!this.dayPathCache || this.dayPathCacheKey !== key) {
-            this.dayPathCache = SmithChartRFMath.buildDayPath(date, this.options.dayPathSampleMinutes);
+            this.dayPathCache = SmithChartRFMath.buildDayPath(date, this.options.dayPathSampleMinutes, pair);
             this.dayPathCacheKey = key;
         }
         return this.dayPathCache;
@@ -1313,10 +1355,10 @@ export class SmithChartClock {
             ctx.setLineDash([]);
         }
 
-        // A whole day of the interference sum is twenty-odd loops, so it is
-        // drawn as a history rather than a solid curve: the day so far sits far
-        // back, and only the last few hours come forward as a bright trail.
-        const TRAIL_MINUTES = 180;
+        // The trail comes in fat and bright at the current moment and tapers
+        // away behind it; the rest of the day stays as a thin history line so
+        // the whole locus is still readable underneath.
+        const TRAIL_MINUTES = 240;
         let prev = this.polarToCartesian(path.samples[0].polar);
         for (let i = 1; i < path.samples.length; i++) {
             const sample = path.samples[i];
@@ -1329,11 +1371,13 @@ export class SmithChartClock {
                 ctx.lineWidth = 0.6;
             } else if (age <= TRAIL_MINUTES) {
                 const freshness = 1 - age / TRAIL_MINUTES;
-                ctx.strokeStyle = `hsla(${hue.toFixed(0)}, 90%, 62%, ${(0.2 + 0.7 * freshness).toFixed(3)})`;
-                ctx.lineWidth = 0.8 + 1.2 * freshness;
+                // Cubed so the head stays fat and the taper falls away fast
+                const weight = freshness * freshness * freshness;
+                ctx.strokeStyle = `hsla(${hue.toFixed(0)}, 95%, 65%, ${(0.12 + 0.85 * weight).toFixed(3)})`;
+                ctx.lineWidth = 0.7 + 7.5 * weight;
             } else {
-                ctx.strokeStyle = `hsla(${hue.toFixed(0)}, 70%, 58%, 0.32)`;
-                ctx.lineWidth = 0.9;
+                ctx.strokeStyle = `hsla(${hue.toFixed(0)}, 70%, 58%, 0.22)`;
+                ctx.lineWidth = 0.8;
             }
 
             ctx.beginPath();
@@ -1956,7 +2000,7 @@ export class SmithChartClock {
 
         // 2b. The composite phasor drives the day path, the VSWR rings and the
         //     radially scaled parameter cursor, so compute it once up front.
-        const composite = SmithChartRFMath.compositePolarForTime(now);
+        const composite = SmithChartRFMath.compositePolarForTime(now, this.plotPair());
         const compositeGamma = SmithChartRFMath.polarToGamma(composite);
 
         // 2c. A full day of reflection, traced by the hour and minute arms
@@ -2009,8 +2053,10 @@ export class SmithChartClock {
 
         // 4. Render Composite Phasor Vector (Hour + Minute Sum)
         if (this.options.showCompositeVector) {
-            const minCart = this.polarToCartesian(minVector);
-            const hrCart = this.polarToCartesian(hrVector);
+            const pair = this.plotPair();
+            const wheels = SmithChartRFMath.handVectorsForTime(now);
+            const minCart = this.polarToCartesian(wheels.find(h => h.id === pair.a)!.polar);
+            const hrCart = this.polarToCartesian(wheels.find(h => h.id === pair.b)!.polar);
 
             const compX = (minCart.x - this.centerX) + (hrCart.x - this.centerX);
             const compY = (minCart.y - this.centerY) + (hrCart.y - this.centerY);
@@ -2143,7 +2189,7 @@ export class SmithChartClock {
 
         const minPolar = hands.find(h => h.id === 'minute')!.polar;
         const hrPolar = hands.find(h => h.id === 'hour')!.polar;
-        const compositePolar = SmithChartRFMath.compositePolarForTime(now);
+        const compositePolar = SmithChartRFMath.compositePolarForTime(now, this.plotPair());
 
         const minute = SmithChartRFMath.computeMetrics(minPolar, z0, hrPolar);
         const hour = SmithChartRFMath.computeMetrics(hrPolar, z0, minPolar);
@@ -2166,7 +2212,7 @@ export class SmithChartClock {
      * composite radius, so a panel can print the whole nomograph as numbers.
      */
     public readRadialScales(): Array<{ id: string; label: string; formula: string; value: string }> {
-        const composite = SmithChartRFMath.compositePolarForTime(this.getEffectiveTime());
+        const composite = SmithChartRFMath.compositePolarForTime(this.getEffectiveTime(), this.plotPair());
         const gamma = SmithChartRFMath.polarToGamma(composite);
         const rho = composite.magnitude;
 

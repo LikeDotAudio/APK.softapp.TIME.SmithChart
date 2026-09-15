@@ -601,6 +601,7 @@
             <div class="card">
                 <div class="card-header">
                     <span class="card-title">🗓️ Day History</span>
+                    <span class="badge" id="dayHistoryPair">Hour × Minute</span>
                     <span class="badge" id="dayHistoryDate">--</span>
                 </div>
                 <div class="metrics-grid">
@@ -719,6 +720,10 @@
 
                 <div class="control-group">
                     <div class="switch-row">
+                        <span>Plotted intersection</span>
+                        <select id="plotPairSelect" style="width: auto; padding: 4px 8px; font-size: 0.75rem;"></select>
+                    </div>
+                    <div class="switch-row">
                         <span>Interference Sum over Time (24 h)</span>
                         <input type="checkbox" id="chkDayPath" checked>
                     </div>
@@ -819,6 +824,26 @@
         const R_LABELLED = [0.1, 0.2, 0.3, 0.4, 0.5, 0.7, 1.0, 1.5, 2.0, 3.0, 5.0, 10, 20];
         const X_LABELLED = [0.2, 0.4, 0.6, 0.8, 1.0, 1.5, 2.0, 3.0, 5.0, 10];
 
+        /**
+         * Which two wheels are crossed to make the plotted locus.
+         *
+         * The trail has always been the hour and minute arms added together;
+         * any other pair is the same construction on different wheels, so the
+         * chart can be asked to correlate whichever two the reader cares about.
+         */
+        const PLOT_PAIRS = [
+            { id: 'hour+minute',   label: 'Hour × Minute',  a: 'hour',   b: 'minute' },
+            { id: 'hour+second',   label: 'Hour × Second',  a: 'hour',   b: 'second' },
+            { id: 'minute+second', label: 'Minute × Second', a: 'minute', b: 'second' },
+            { id: 'hour+date',     label: 'Hour × Date',    a: 'hour',   b: 'date' },
+            { id: 'minute+date',   label: 'Minute × Date',  a: 'minute', b: 'date' },
+            { id: 'date+month',    label: 'Date × Month',   a: 'date',   b: 'month' },
+            { id: 'month+year',    label: 'Month × Year',   a: 'month',  b: 'year' }
+        ];
+
+        const plotPair = () =>
+            PLOT_PAIRS.find(pr => pr.id === config.plotPair) || PLOT_PAIRS[0];
+
         class SmithMath {
             static polarToCartesian(mag, phase, centerX, centerY, scaleRadius) {
                 return {
@@ -903,11 +928,14 @@
              * renormalised so the pair can never leave the unit circle. This is
              * the point the day path traces and the parameter cursor reads.
              */
-            static compositePolar(date) {
+            static compositePolar(date, pair) {
+                const pr = pair || plotPair();
                 const h = SmithMath.handVectors(date);
-                const re = h.minute.mag * Math.cos(h.minute.phase) + h.hour.mag * Math.cos(h.hour.phase);
-                const im = h.minute.mag * Math.sin(h.minute.phase) + h.hour.mag * Math.sin(h.hour.phase);
-                const norm = HAND_MAGS.minute + HAND_MAGS.hour;
+                const a = h[pr.a];
+                const b = h[pr.b];
+                const re = a.mag * Math.cos(a.phase) + b.mag * Math.cos(b.phase);
+                const im = a.mag * Math.sin(a.phase) + b.mag * Math.sin(b.phase);
+                const norm = a.mag + b.mag;
                 return {
                     mag: Math.min(1.0, Math.sqrt(re * re + im * im) / norm),
                     phase: Math.atan2(im, re)
@@ -918,7 +946,8 @@
              * A full local day of normalization and reflection, read off the
              * clock arms: midnight to midnight, Gamma -> z -> y -> VSWR.
              */
-            static buildDayPath(date, sampleMinutes = 2) {
+            static buildDayPath(date, sampleMinutes = 2, pair) {
+                const pr = pair || plotPair();
                 const step = Math.max(1, Math.min(60, Math.round(sampleMinutes)));
                 const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
 
@@ -928,7 +957,7 @@
                 for (let minuteOfDay = 0; minuteOfDay <= 1440; minuteOfDay += step) {
                     const m = Math.min(1440, minuteOfDay);
                     const stamp = new Date(dayStart.getTime() + m * 60000);
-                    const polar = SmithMath.compositePolar(stamp);
+                    const polar = SmithMath.compositePolar(stamp, pr);
                     const rho = polar.mag;
                     const gammaRe = rho * Math.cos(polar.phase);
                     const gammaIm = rho * Math.sin(polar.phase);
@@ -1116,6 +1145,7 @@
             showCalendar: true,
             showRadialScales: true,
             showRimScales: true,
+            plotPair: 'hour+minute',
             dayPathSampleMinutes: 2,
             colorEngine: 'rf-phasor', // 'date-dna' | 'mood' | 'rf-phasor'
             spiralStartYear: 1900,
@@ -1126,7 +1156,7 @@
         let dayPathCache = null;
         let dayPathCacheKey = '';
         function getDayPath(date) {
-            const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}-${config.dayPathSampleMinutes}-${config.z0}`;
+            const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}-${config.dayPathSampleMinutes}-${config.z0}-${config.plotPair}`;
             if (!dayPathCache || dayPathCacheKey !== key) {
                 dayPathCache = SmithMath.buildDayPath(date, config.dayPathSampleMinutes);
                 dayPathCacheKey = key;
@@ -1178,6 +1208,16 @@
         document.getElementById('chkAdmittance').addEventListener('change', e => config.showAdmittance = e.target.checked);
         document.getElementById('chkVswr').addEventListener('change', e => config.showVswrCircles = e.target.checked);
         document.getElementById('chkCalendar').addEventListener('change', e => config.showCalendar = e.target.checked);
+        // Populate and wire the plotted-intersection selector
+        const plotPairSelect = document.getElementById('plotPairSelect');
+        plotPairSelect.innerHTML = PLOT_PAIRS
+            .map(pr => `<option value="${pr.id}"${pr.id === config.plotPair ? ' selected' : ''}>${pr.label}</option>`)
+            .join('');
+        plotPairSelect.addEventListener('change', e => {
+            config.plotPair = e.target.value;
+            dayPathCache = null; // the locus is a different curve now
+        });
+
         document.getElementById('chkRimScales').addEventListener('change', e => config.showRimScales = e.target.checked);
         document.getElementById('chkRadialScales').addEventListener('change', e => {
             config.showRadialScales = e.target.checked;
@@ -1821,10 +1861,10 @@
                 ctx.setLineDash([]);
             }
 
-            // A whole day of the interference sum is twenty-odd loops, so it is
-            // drawn as a history rather than a solid curve: the day so far sits
-            // far back, and only the last few hours come forward as a bright trail.
-            const TRAIL_MINUTES = 180;
+            // The trail comes in fat and bright at the current moment and tapers
+            // away behind it; the rest of the day stays as a thin history line so
+            // the whole locus is still readable underneath.
+            const TRAIL_MINUTES = 240;
             let prev = pt(path.samples[0].polar);
             for (let i = 1; i < path.samples.length; i++) {
                 const sample = path.samples[i];
@@ -1837,11 +1877,13 @@
                     ctx.lineWidth = 0.6;
                 } else if (age <= TRAIL_MINUTES) {
                     const freshness = 1 - age / TRAIL_MINUTES;
-                    ctx.strokeStyle = `hsla(${hue.toFixed(0)}, 90%, 62%, ${(0.2 + 0.7 * freshness).toFixed(3)})`;
-                    ctx.lineWidth = 0.8 + 1.2 * freshness;
+                    // Cubed so the head stays fat and the taper falls away fast
+                    const weight = freshness * freshness * freshness;
+                    ctx.strokeStyle = `hsla(${hue.toFixed(0)}, 95%, 65%, ${(0.12 + 0.85 * weight).toFixed(3)})`;
+                    ctx.lineWidth = 0.7 + 7.5 * weight;
                 } else {
-                    ctx.strokeStyle = `hsla(${hue.toFixed(0)}, 70%, 58%, 0.32)`;
-                    ctx.lineWidth = 0.9;
+                    ctx.strokeStyle = `hsla(${hue.toFixed(0)}, 70%, 58%, 0.22)`;
+                    ctx.lineWidth = 0.8;
                 }
 
                 ctx.beginPath();
@@ -2451,8 +2493,12 @@
 
             // 4. Composite Resultant Vector (Σ)
             if (config.showComposite) {
-                const minTarget = SmithMath.polarToCartesian(minMag, minPhase, dayOrigin.x, dayOrigin.y, scaleRadius);
-                const hrTarget = SmithMath.polarToCartesian(hrMag, hrPhase, dayOrigin.x, dayOrigin.y, scaleRadius);
+                const pr = plotPair();
+                const wheels = SmithMath.handVectors(now);
+                const minTarget = SmithMath.polarToCartesian(
+                    wheels[pr.a].mag, wheels[pr.a].phase, dayOrigin.x, dayOrigin.y, scaleRadius);
+                const hrTarget = SmithMath.polarToCartesian(
+                    wheels[pr.b].mag, wheels[pr.b].phase, dayOrigin.x, dayOrigin.y, scaleRadius);
 
                 const compX = (minTarget.x - dayOrigin.x) + (hrTarget.x - dayOrigin.x);
                 const compY = (minTarget.y - dayOrigin.y) + (hrTarget.y - dayOrigin.y);
@@ -2741,6 +2787,7 @@
             const vswr = rho >= 0.9999 ? '∞' : ((1 + rho) / (1 - rho)).toFixed(2);
             const rl = rho > 1e-5 ? (-20 * Math.log10(rho)).toFixed(2) : '∞';
 
+            document.getElementById('dayHistoryPair').textContent = plotPair().label;
             document.getElementById('dayHistoryDate').textContent =
                 `${path.dayStart.getFullYear()}-${(path.dayStart.getMonth() + 1).toString().padStart(2, '0')}-${path.dayStart.getDate().toString().padStart(2, '0')}`;
             document.getElementById('valBestMatch').textContent =
