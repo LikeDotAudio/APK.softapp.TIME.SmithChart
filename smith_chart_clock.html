@@ -2081,6 +2081,124 @@
             return { x: centerX + (2 * dayFractionOf(now) - 1) * scaleRadius, y: centerY };
         }
 
+        /**
+         * The three points that fix where the clock pivots.
+         *
+         * The hour anchor is the white dot riding the real axis -- the vital one,
+         * since it alone says how far through the day we are. It is paired with
+         * the second wheel and then with the date wheel, each taken on its own
+         * constant-VSWR circle at its own phase. Those three corners make a
+         * triangle, and the clock hangs off its centroid.
+         *
+         * All three are measured from the chart centre, never from the pivot,
+         * so the construction cannot chase its own tail.
+         */
+        function clockAnchorsOf(now) {
+            const hands = SmithMath.handVectors(now);
+            const at = h => SmithMath.polarToCartesian(h.mag, h.phase, centerX, centerY, scaleRadius);
+
+            const hour = dayOriginOf(now);
+            const second = at(hands.second);
+            const date = at(hands.date);
+
+            return {
+                hour,
+                second,
+                date,
+                pivot: {
+                    x: (hour.x + second.x + date.x) / 3,
+                    y: (hour.y + second.y + date.y) / 3
+                }
+            };
+        }
+
+        /**
+         * Draws the solution triangle and the pivot it resolves to.
+         */
+        function drawPivotTriangle(anchors) {
+            const { hour, second, date, pivot } = anchors;
+
+            ctx.save();
+
+            // The triangle itself
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([6, 4]);
+            ctx.beginPath();
+            ctx.moveTo(hour.x, hour.y);
+            ctx.lineTo(second.x, second.y);
+            ctx.lineTo(date.x, date.y);
+            ctx.closePath();
+            ctx.stroke();
+
+            // Medians, so the centroid reads as a construction rather than a guess
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.28)';
+            ctx.setLineDash([2, 5]);
+            ctx.beginPath();
+            [[hour, second, date], [second, date, hour], [date, hour, second]].forEach(([a, b, c]) => {
+                ctx.moveTo(c.x, c.y);
+                ctx.lineTo((a.x + b.x) / 2, (a.y + b.y) / 2);
+            });
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // The three corners
+            ctx.font = 'bold 9px ui-monospace, monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            [
+                { pt: hour, color: '#ffffff', tag: 'HR', r: 4.5 },
+                { pt: second, color: '#facc15', tag: 'SEC', r: 3.2 },
+                { pt: date, color: '#10b981', tag: 'DATE', r: 3.2 }
+            ].forEach(corner => {
+                ctx.fillStyle = corner.color;
+                ctx.beginPath();
+                ctx.arc(corner.pt.x, corner.pt.y, corner.r, 0, 2 * Math.PI);
+                ctx.fill();
+                // The hour anchor already carries the time stamp above it, so
+                // its own label goes underneath to stay clear.
+                const dy = corner.tag === 'HR' ? corner.r + 8 : -(corner.r + 7);
+                ctx.fillText(corner.tag, corner.pt.x, corner.pt.y + dy);
+            });
+
+            void pivot; // the pivot mark is drawn last, over the arms
+            ctx.restore();
+        }
+
+        /**
+         * The centroid of the anchor triangle: the point every arm hangs off.
+         * Drawn after the arms so it is always visible, never buried under them.
+         */
+        function drawPivotMark(pivot) {
+            ctx.save();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.6;
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+            ctx.shadowBlur = 4;
+
+            ctx.beginPath();
+            ctx.arc(pivot.x, pivot.y, 7, 0, 2 * Math.PI);
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(pivot.x - 11, pivot.y);
+            ctx.lineTo(pivot.x - 3, pivot.y);
+            ctx.moveTo(pivot.x + 3, pivot.y);
+            ctx.lineTo(pivot.x + 11, pivot.y);
+            ctx.moveTo(pivot.x, pivot.y - 11);
+            ctx.lineTo(pivot.x, pivot.y - 3);
+            ctx.moveTo(pivot.x, pivot.y + 3);
+            ctx.lineTo(pivot.x, pivot.y + 11);
+            ctx.stroke();
+
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(pivot.x, pivot.y, 2, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.restore();
+        }
+
         function drawDayAxis(now) {
             const dayFraction = dayFractionOf(now);
             const xOfFraction = f => centerX + (2 * f - 1) * scaleRadius;
@@ -2298,10 +2416,13 @@
             // 2d. Constant-VSWR circles: radius |Gamma|, centred on the origin
             if (config.showVswrCircles) drawVswrCircles(composite.mag);
 
-            // 2e. The day bar along the real axis. It is drawn before the arms
-            //     because every arm now emanates from its dot.
-            const dayOrigin = dayOriginOf(now);
+            // 2e. The day bar, then the three anchors that fix the pivot. Both
+            //     are drawn before the arms, because every arm hangs off the
+            //     centroid of that triangle.
+            const anchors = clockAnchorsOf(now);
+            const dayOrigin = anchors.pivot;
             drawDayAxis(now);
+            drawPivotTriangle(anchors);
 
             // 3. Compute Phasor Angles
             const minPhase = (min / 60.0) * (2 * Math.PI) - (Math.PI / 2);
@@ -2401,10 +2522,7 @@
             ctx.lineTo(centerX, centerY + 5);
             ctx.stroke();
 
-            ctx.fillStyle = '#ffffff';
-            ctx.beginPath();
-            ctx.arc(dayOrigin.x, dayOrigin.y, 3.2, 0, 2 * Math.PI);
-            ctx.fill();
+            drawPivotMark(dayOrigin);
 
             // 7. Mark where the interference sum has actually reached
             drawTimePlot(now, composite);
