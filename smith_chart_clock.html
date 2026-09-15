@@ -1030,7 +1030,10 @@
 
                 const dim = SmithMath.daysInMonth(date);
                 const dayFrac = (date.getDate() - 1) + (date.getHours() + minutes / 60) / 24;
-                const monthFrac = date.getMonth() + dayFrac / dim;
+                // Twelve months onto the twelve of the dial: January points at
+                // the 1, December at the 12, and each month creeps toward the
+                // next across its own days, the way an hour hand does.
+                const monthFrac = (date.getMonth() + 1) + dayFrac / dim;
                 // The year turns once per year, swept by the day of the year:
                 // 365 days across 360 degrees. Its radius is the two-digit year
                 // against a scale of 0 to 100, so 2026 sits at 0.26.
