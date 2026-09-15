@@ -78,6 +78,8 @@ export interface HandVector {
     id: 'second' | 'minute' | 'hour' | 'date' | 'month' | 'year';
     label: string;
     polar: PolarCoordinate;
+    /** What the wheel currently reads, e.g. '09' for September. */
+    value: string;
     /** Human readable description of what one revolution means. */
     period: string;
 }
@@ -385,29 +387,37 @@ export class SmithChartRFMath {
         const turn = (fraction: number, whole: number): number =>
             (fraction / whole) * (2 * Math.PI) - (Math.PI / 2);
 
+        const pad = (n: number): string => n.toString().padStart(2, '0');
+
         return [
             {
                 id: 'second', label: 'S', period: '60 s per revolution',
+                value: pad(Math.floor(seconds)),
                 polar: { magnitude: HAND_MAGNITUDES.second, phase: turn(seconds, 60) }
             },
             {
                 id: 'minute', label: 'M', period: '60 min per revolution',
+                value: pad(date.getMinutes()),
                 polar: { magnitude: HAND_MAGNITUDES.minute, phase: turn(minutes, 60) }
             },
             {
                 id: 'hour', label: 'H', period: '12 h per revolution',
+                value: pad((date.getHours() % 12) || 12),
                 polar: { magnitude: HAND_MAGNITUDES.hour, phase: turn(hours12, 12) }
             },
             {
                 id: 'date', label: 'D', period: 'one month per revolution',
+                value: pad(date.getDate()),
                 polar: { magnitude: HAND_MAGNITUDES.date, phase: turn(dayFrac, dim) }
             },
             {
                 id: 'month', label: 'MO', period: 'one year per revolution',
+                value: pad(date.getMonth() + 1),
                 polar: { magnitude: HAND_MAGNITUDES.month, phase: turn(monthFrac, 12) }
             },
             {
                 id: 'year', label: 'Y', period: 'one decade per revolution',
+                value: date.getFullYear().toString(),
                 polar: { magnitude: HAND_MAGNITUDES.year, phase: turn(yearFrac, 10) }
             }
         ];
@@ -695,6 +705,9 @@ export class SmithChartClock {
     private stripTop: number = 0;
     private stripHeight: number = 0;
 
+    // Rim readings pending placement for this frame
+    private rimReadings: Array<{ phase: number; color: string; text: string }> = [];
+
     // The day path is identical for every frame of a given day, so cache it
     private dayPathCache: DayPathSummary | null = null;
     private dayPathCacheKey: string = '';
@@ -792,8 +805,9 @@ export class SmithChartClock {
         const chartHeight = height - this.stripHeight;
         this.centerX = width / 2;
         this.centerY = chartHeight / 2;
-        // Leave 32px padding for angle & wavelength calibrations
-        this.scaleRadius = Math.max(10, Math.min(width / 2, chartHeight / 2) - 32);
+        // Outside the rim sit the dial numbers and, beyond them, the value each
+        // ghost line is reading. Both need clearance.
+        this.scaleRadius = Math.max(10, Math.min(width / 2, chartHeight / 2) - 52);
     }
 
     /**
@@ -1663,7 +1677,7 @@ export class SmithChartClock {
      * runs from the matched centre out to the rim in the same direction, which
      * is what actually points at the 10 at twenty to eleven.
      */
-    private drawGhostHand(polar: PolarCoordinate, color: string): void {
+    private drawGhostHand(polar: PolarCoordinate, color: string, reading?: string): void {
         const ctx = this.ctx;
         ctx.save();
         ctx.strokeStyle = color;
@@ -1687,6 +1701,76 @@ export class SmithChartClock {
         ctx.arc(bead.x, bead.y, 2.5, 0, 2 * Math.PI);
         ctx.fill();
         ctx.restore();
+
+        // The value this line is reading, printed where it leaves the chart.
+        // Queued rather than drawn, so coincident wheels can be spread out once
+        // the whole set is known.
+        if (reading) this.rimReadings.push({ phase: polar.phase, color, text: reading });
+    }
+
+    /**
+     * Prints what each ghost line reads, just outside the rim it points at.
+     *
+     * A dotted line on its own only says which way a wheel is facing; the chip
+     * says what it is facing at. Each gets a dark pill so it stays legible
+     * where it crosses a dial number, and chips step outwards when two wheels
+     * happen to point almost the same way.
+     */
+    private flushRimReadings(): void {
+        const ctx = this.ctx;
+        ctx.save();
+        ctx.font = 'bold 9px ui-monospace, monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        const placed: Array<{ cx: number; cy: number; w: number; h: number }> = [];
+
+        for (const reading of this.rimReadings) {
+            const w = ctx.measureText(reading.text).width + 7;
+            const h = 13;
+
+            let rr = this.scaleRadius + 30;
+            let box = { cx: 0, cy: 0, w, h };
+            for (let attempt = 0; attempt < 4; attempt++) {
+                box = {
+                    cx: this.centerX + rr * Math.cos(reading.phase),
+                    cy: this.centerY + rr * Math.sin(reading.phase),
+                    w,
+                    h
+                };
+                const clash = placed.some(q =>
+                    Math.abs(box.cx - q.cx) < (box.w + q.w) / 2 + 3 &&
+                    Math.abs(box.cy - q.cy) < (box.h + q.h) / 2 + 3);
+                if (!clash) break;
+                rr += 16;
+            }
+            placed.push(box);
+
+            const left = box.cx - w / 2;
+            const top = box.cy - h / 2;
+            const r = 3;
+
+            ctx.fillStyle = 'rgba(10, 13, 20, 0.92)';
+            ctx.strokeStyle = reading.color;
+            ctx.lineWidth = 0.8;
+            ctx.globalAlpha = 0.95;
+            ctx.beginPath();
+            ctx.moveTo(left + r, top);
+            ctx.arcTo(left + w, top, left + w, top + h, r);
+            ctx.arcTo(left + w, top + h, left, top + h, r);
+            ctx.arcTo(left, top + h, left, top, r);
+            ctx.arcTo(left, top, left + w, top, r);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = reading.color;
+            ctx.fillText(reading.text, box.cx, box.cy);
+        }
+
+        ctx.restore();
+        this.rimReadings = [];
     }
 
     /**
@@ -2090,10 +2174,16 @@ export class SmithChartClock {
 
         // 5. Render Main Phasor Hands, deliberately overscaled so they stay
         //    legible on top of a full day of interference-sum history.
-        // Ghosts first: centre-to-rim lines that still read against the dial
-        this.drawGhostHand(hrVector, hrColor);
-        this.drawGhostHand(minVector, minColor);
-        if (this.options.showSecondHand) this.drawGhostHand(secVector, secColor);
+        // Ghosts first: centre-to-rim lines that still read against the dial,
+        // each printing its own value at the edge it points to.
+        const wheelsNow = SmithChartRFMath.handVectorsForTime(now);
+        const readingFor = (id: HandVector['id']): string => {
+            const wheel = wheelsNow.find(h => h.id === id)!;
+            return `${wheel.label} ${wheel.value}`;
+        };
+        this.drawGhostHand(hrVector, hrColor, readingFor('hour'));
+        this.drawGhostHand(minVector, minColor, readingFor('minute'));
+        if (this.options.showSecondHand) this.drawGhostHand(secVector, secColor, readingFor('second'));
 
         // Hour Hand (Low frequency, thick)
         this.drawPhasorVector(hrVector, hrColor, 9.0, 'H', true, dayOrigin);
@@ -2130,11 +2220,12 @@ export class SmithChartClock {
             };
             for (const hand of SmithChartRFMath.handVectorsForTime(now)) {
                 if (hand.id !== 'date' && hand.id !== 'month' && hand.id !== 'year') continue;
-                this.drawGhostHand(hand.polar, calendarColors[hand.id]);
+                this.drawGhostHand(hand.polar, calendarColors[hand.id], `${hand.label} ${hand.value}`);
                 this.drawPhasorVector(hand.polar, calendarColors[hand.id], 4.5, hand.label, true, dayOrigin);
             }
         }
 
+        this.flushRimReadings();
         this.drawPivotMark(dayOrigin);
 
         // 7. Mark where the composite phasor stands on its own locus right now
