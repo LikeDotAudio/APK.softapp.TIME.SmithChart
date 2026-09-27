@@ -16,7 +16,7 @@ This repository is a modular, standalone component of the APK.audio Softapps sui
 
 | File | Purpose |
 | --- | --- |
-| `SmithChartClock.ts` | The clock face implementation — chart geometry, hands, and the radially scaled parameter strip. |
+| `SmithChartClock/` | The clock face implementation, one job per file: `types.ts` (type vocabulary), `math/` (Γ ↔ z ↔ y, \|Γ\|-derived metrics, the `SmithChartRFMath` façade), `time/` (clock wheels, 24-hour day path), `colour/` (date-derived colours), `scales/` (the radially scaled parameters ruler table), `render/` (geometry, zoom/pan input, theme, and one file per canvas layer), `readouts.ts` (panel numbers and formula text), `options.ts` (defaults), `SmithChartClock.ts` (the class: canvas, clock source, frame loop) and `index.ts` (public surface). |
 | `index.ts` | Barrel export. |
 | `smith_chart_clock.html` | Standalone prototype / preview page. |
 | `URGENT SMITH CHART.md` | Design notes and outstanding work. |

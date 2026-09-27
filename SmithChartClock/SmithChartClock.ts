@@ -1,32 +1,21 @@
 /**
- * SmithChartClock.ts
- * 
- * High-Precision Smith Chart Clock, Chronobiological Mood Engine, 
- * Date-DNA Historical Spiral, and RF Phasor Vector System.
- * 
- * Developed for OneThing / OpenAir libControl
+ * The clock itself: owns the canvas, the clock source and the frame loop,
+ * and delegates every layer to render/ and every number to the pure folders.
  */
 
 import type {
     CartesianCoordinate, ClockAnchors, DateDNA, DayPathSummary, HandVector, ImpedanceMetrics,
     MoodData, PlotPairDef, PolarCoordinate, SmithChartClockOptions
-} from './SmithChartClock/types';
-import { polarToGamma } from './SmithChartClock/math/complex';
-import { compositePolarForTime, handVectorsForTime, plotPairById } from './SmithChartClock/time/wheels';
-import { DayPathCache } from './SmithChartClock/time/dayPath';
-import { resolveOptions } from './SmithChartClock/options';
-import * as readouts from './SmithChartClock/readouts';
-import { ChartGeometry, type Layer } from './SmithChartClock/render/geometry';
-import { attachViewControls } from './SmithChartClock/render/input';
-import { RimReadings } from './SmithChartClock/render/labels';
-import { themeColors } from './SmithChartClock/render/theme';
-import { drawSmithChartGrid } from './SmithChartClock/render/grid';
-import { drawHistoricalSpiral } from './SmithChartClock/render/spiral';
-import { drawDayPath, drawVswrCircles } from './SmithChartClock/render/loci';
-import { drawDayAxis } from './SmithChartClock/render/dayAxis';
-import { clockAnchorsFor, drawPivotMark, drawPivotTriangle } from './SmithChartClock/render/pivot';
-import { drawHands } from './SmithChartClock/render/handsLayer';
-import { drawRadialParameterScales } from './SmithChartClock/render/radialStrip';
+} from './types';
+import { handVectorsForTime, plotPairById } from './time/wheels';
+import { DayPathCache } from './time/dayPath';
+import { resolveOptions } from './options';
+import * as readouts from './readouts';
+import { ChartGeometry, type Layer } from './render/geometry';
+import { attachViewControls } from './render/input';
+import { RimReadings } from './render/labels';
+import { clockAnchorsFor } from './render/pivot';
+import { drawFrame } from './render/frame';
 
 /**
  * Unified Smith Chart Clock & Chronograph Implementation
@@ -163,63 +152,7 @@ export class SmithChartClock {
      */
     public tick = (timestamp: number = 0): void => {
         const now = this.getEffectiveTime();
-        const colors = themeColors(this.options.theme);
-        const ctx = this.ctx;
-        const layer = this.layer;
-        const hands = handVectorsForTime(now);
-
-        // 1. Clear, then fence the chart into its own area so a zoomed-in view
-        //    cannot spill over the parameter strip below it.
-        ctx.fillStyle = colors.background;
-        ctx.fillRect(0, 0, this.geo.width, this.geo.height);
-
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(0, 0, this.geo.width, this.geo.stripTop);
-        ctx.clip();
-
-        drawSmithChartGrid(layer);
-
-        // 2. Historical Date-DNA Spiral (decorative, off by default)
-        drawHistoricalSpiral(layer, now);
-
-        // 2b. The composite phasor drives the day path, the VSWR rings and the
-        //     radially scaled parameter cursor, so compute it once up front.
-        const pair = this.plotPair();
-        const composite = compositePolarForTime(now, pair);
-        const compositeGamma = polarToGamma(composite);
-
-        // 2c. A full day of reflection, traced by the plotted pair of arms
-        if (this.options.showDayPath) drawDayPath(layer, now, this.getDayPath(now));
-
-        // 2d. Constant-VSWR circles: radius |Gamma|, centred on the origin
-        if (this.options.showVswrCircles) drawVswrCircles(layer, composite.magnitude);
-
-        // 2e. The day bar, then the three anchors that fix the pivot. Both are
-        //     drawn before the arms, because every arm hangs off the centroid
-        //     of that triangle.
-        const anchors = clockAnchorsFor(this.geo, now, hands);
-        drawDayAxis(layer, now);
-        drawPivotTriangle(ctx, anchors);
-
-        // 3–6. Composite, H/M/S and calendar arms, then their rim chips
-        drawHands(layer, { now, hands, composite, anchors, pair, colors, rim: this.rimReadings });
-        this.rimReadings.flush(layer);
-        drawPivotMark(ctx, anchors.pivot);
-
-        ctx.restore(); // end of the chart's clip
-
-        // 7. Mark where the composite phasor stands on its own locus right now
-        const nowPoint = this.geo.polarToCartesian(composite);
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1.2;
-        ctx.beginPath();
-        ctx.arc(nowPoint.x, nowPoint.y, 3.2, 0, 2 * Math.PI);
-        ctx.stroke();
-
-        // 8. Radially scaled parameters, cursored at the composite radius
-        drawRadialParameterScales(layer, composite.magnitude, compositeGamma.re);
-
+        drawFrame(this.layer, now, this.plotPair(), () => this.getDayPath(now), this.rimReadings);
         this.animationFrameId = requestAnimationFrame(this.tick);
     };
 
@@ -286,7 +219,3 @@ export class SmithChartClock {
     }
 }
 
-export type * from './SmithChartClock/types';
-export { HAND_MAGNITUDES, PLOT_PAIRS, plotPairById } from './SmithChartClock/time/wheels';
-export { SmithChartRFMath } from './SmithChartClock/math/rfMath';
-export { RADIAL_SCALES, formatScaleValue } from './SmithChartClock/scales/radialScales';
