@@ -30,5 +30,5 @@ This repository is a modular, standalone component of the APK.audio Softapps sui
 * **Remote Repository**: https://github.com/LikeDotAudio/APK.softapp.TIME.SmithChart
 
 <!-- wiki:smoke -->
-**Smoke test** — ❌ FAIL 1/2 since 2026-10-30 22:22 EDT — [results](Documentation/%F0%9F%A7%A9Manual%20and%20Artifacts/SMOKE.md)
+**Smoke test** — ❌ FAIL 1/2 since 2026-10-30 22:23 EDT — [results](Documentation/%F0%9F%A7%A9Manual%20and%20Artifacts/SMOKE.md)
 <!-- /wiki:smoke -->
