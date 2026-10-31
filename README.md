@@ -28,3 +28,7 @@ This repository is a modular, standalone component of the APK.audio Softapps sui
 * **Web Portal Entry**: `APK:Softapps/TIME/TIME.clockFaces/Smith Chart/smith_chart_clock.html`
 * **Check**: `npm ci && npm test` (by hand, before a push)
 * **Remote Repository**: https://github.com/LikeDotAudio/APK.softapp.TIME.SmithChart
+
+<!-- wiki:smoke -->
+**Smoke test** — ❌ FAIL 1/2 since 2026-10-30 22:22 EDT — [results](Documentation/%F0%9F%A7%A9Manual%20and%20Artifacts/SMOKE.md)
+<!-- /wiki:smoke -->
