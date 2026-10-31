@@ -1,25 +1,17 @@
-// test/smith.test.mjs — the Smith Chart Clock's math, and the page/module contract.
+// test/smith.test.mjs — the Smith Chart Clock page's maths and tables.
 //
-// The page the OS frames (smith_chart_clock.html) carries its own inline script;
-// SmithChartClock/ is the same clock as a TypeScript module. Until one of them is
-// retired (see Documentation/🛣Roadmap/IMPROVEMENTS.md) this test is what keeps them
-// from drifting: it runs the page's script in a sandbox with a stub DOM and checks
-// that every table and formula both of them carry gives the same answer.
-// `npm test` compiles the module to .test-build/ first (`pretest`).
+// smith_chart_clock.html is the clock (its inline script is the one implementation; the
+// SmithChartClock/ TypeScript port was retired, see README). This test runs that script in
+// a node:vm sandbox whose document/window are stubs that accept any call, then checks the
+// page's own top-level tables and formulas against the RF definitions.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const require = createRequire(import.meta.url);
-const ts = require(join(root, '.test-build/index.js'));
-const metrics = require(join(root, '.test-build/SmithChartClock/math/metrics.js'));
-const complex = require(join(root, '.test-build/SmithChartClock/math/complex.js'));
-const grid = require(join(root, '.test-build/SmithChartClock/render/grid.js'));
 
 function stub() {
   const f = function () {};
@@ -42,40 +34,55 @@ function loadPage() {
   return (expr) => vm.runInContext(expr, ctx);
 }
 const page = loadPage();
-const RHOS = [0, 0.05, 0.2, 0.5, 0.75, 0.9, 0.99];
 const close = (a, b, msg) => (a === b || Math.abs(a - b) < 1e-9 ? undefined : assert.fail(`${msg}: ${a} vs ${b}`));
+const RHOS = [0, 0.05, 0.2, 0.5, 0.75, 0.9];
 
-test('impedance math', () => {
-  const g = complex.normalizedImpedanceToGamma({ re: 1, im: 0 });
-  close(g.re, 0, 'z=1 matches'); close(g.im, 0, 'z=1 matches');
-  const z = complex.gammaToNormalizedImpedance({ re: 0.2, im: -0.3 });
-  const back = complex.normalizedImpedanceToGamma(z);
-  close(back.re, 0.2, 'round trip re'); close(back.im, -0.3, 'round trip im');
-  close(metrics.swrFromRho(0.5), 3, 'SWR at |Γ|=0.5');
-  close(metrics.rhoFromSwr(3), 0.5, '|Γ| at SWR 3');
-  assert.equal(metrics.swrFromRho(1), Infinity);
+test('the page script runs headless', () => {
+  assert.equal(page('typeof RADIAL_SCALES'), 'object');
 });
 
-test('page and module: SWR <-> |Γ|', () => {
-  for (const r of RHOS) close(page(`swrFromRho(${r})`), metrics.swrFromRho(r), `swrFromRho(${r})`);
-  for (const s of [1, 1.5, 2, 3, 10]) close(page(`rhoFromSwr(${s})`), metrics.rhoFromSwr(s), `rhoFromSwr(${s})`);
+test('SWR <-> |Γ|', () => {
+  for (const r of RHOS) close(page(`swrFromRho(${r})`), (1 + r) / (1 - r), `swrFromRho(${r})`);
+  for (const s of [1, 1.5, 2, 3, 10]) close(page(`rhoFromSwr(${s})`), (s - 1) / (s + 1), `rhoFromSwr(${s})`);
+  assert.equal(page('swrFromRho(1)'), Infinity);
 });
 
-test('page and module: the radially scaled parameter rulers', () => {
-  const p = JSON.parse(page('JSON.stringify(RADIAL_SCALES.map(s => ({ id: s.id, row: s.row, side: s.side, label: s.label, precision: s.precision, ticks: s.ticks.map(String) })))'));
-  const m = ts.RADIAL_SCALES.map((s) => ({ id: s.id, row: s.row, side: s.side, label: s.label, precision: s.precision, ticks: s.ticks.map(String) }));
-  assert.deepEqual(p, m);
-  for (const [i, s] of ts.RADIAL_SCALES.entries()) {
-    for (const r of RHOS) close(page(`RADIAL_SCALES[${i}].valueOf(${r})`), s.valueOf(r), `${s.id}.valueOf(${r})`);
+test('radially scaled parameter rulers', () => {
+  const ids = JSON.parse(page('JSON.stringify(RADIAL_SCALES.map(s => s.id))'));
+  assert.deepEqual(ids, ['swr', 'dbs', 'rtnLoss', 'rflCoeffE', 'rflCoeffP', 'atten', 'swLossCoeff', 'rflLoss', 'swPeak', 'transmP', 'transmE']);
+  const at = (id, r) => page(`RADIAL_SCALES.find(s => s.id === '${id}').valueOf(${r})`);
+  for (const r of RHOS.filter((x) => x > 0)) {
+    close(at('swr', r), (1 + r) / (1 - r), `swr ${r}`);
+    close(at('rtnLoss', r), -20 * Math.log10(r), `return loss ${r}`);
+    close(at('rflCoeffP', r), r * r, `power coefficient ${r}`);
+    close(at('transmP', r), 1 - r * r, `transmitted power ${r}`);
   }
-  for (const v of [0, 1, 1.23456, 2.5, Infinity]) assert.equal(page(`formatScaleValue(${v}, 3)`), ts.formatScaleValue(v, 3));
+  // every ruler is invertible where it is finite: rhoOf(valueOf(rho)) = rho
+  const n = page('RADIAL_SCALES.length');
+  for (let i = 0; i < n; i++) {
+    for (const r of [0.2, 0.5, 0.75]) {
+      const back = page(`(s => s.rhoOf(s.valueOf(${r})))(RADIAL_SCALES[${i}])`);
+      close(back, r, `${page(`RADIAL_SCALES[${i}].id`)} rhoOf∘valueOf at ${r}`);
+    }
+  }
+  assert.equal(page('formatScaleValue(Infinity, 2)'), '∞');
+  assert.equal(page('formatScaleValue(1.23456, 3)'), '1.235');
 });
 
-test('page and module: chart grid, hands and plot pairs', () => {
-  assert.deepEqual(JSON.parse(page('JSON.stringify(GRID_MAJOR)')), grid.GRID_MAJOR);
-  assert.deepEqual(JSON.parse(page('JSON.stringify(GRID_MINOR)')), grid.GRID_MINOR);
-  const pageHands = JSON.parse(page('JSON.stringify(HAND_MAGS)'));
-  for (const [k, v] of Object.entries(ts.HAND_MAGNITUDES)) close(pageHands[k], v, `hand ${k}`);
-  const pick = (l) => l.map(({ id, label, a, b }) => ({ id, label, a, b }));
-  assert.deepEqual(pick(JSON.parse(page('JSON.stringify(PLOT_PAIRS)'))), pick(ts.PLOT_PAIRS));
+test('chart grid: minors never repeat a major', () => {
+  const major = JSON.parse(page('JSON.stringify(GRID_MAJOR)'));
+  const minor = JSON.parse(page('JSON.stringify(GRID_MINOR)'));
+  assert.ok(major.length && minor.length);
+  assert.deepEqual(minor.filter((v) => major.includes(v)), []);
+  assert.deepEqual(minor, [...minor].sort((a, b) => a - b));
+});
+
+test('hands and plot pairs', () => {
+  const hands = JSON.parse(page('JSON.stringify(HAND_MAGS)'));
+  for (const k of ['hour', 'minute', 'second']) assert.ok(hands[k] > 0 && hands[k] <= 1, `hand ${k}`);
+  const pairs = JSON.parse(page('JSON.stringify(PLOT_PAIRS)'));
+  for (const p of pairs) {
+    assert.equal(p.id, `${p.a}+${p.b}`);
+    assert.ok(p.a in hands && p.b in hands, `pair ${p.id} names known hands`);
+  }
 });

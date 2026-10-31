@@ -1,6 +1,6 @@
 # TIME.SmithChart delivery
 
-A page and a TypeScript module; nothing is built here.
+One page; nothing is built here.
 
 - **Repository:** https://github.com/LikeDotAudio/APK.softapp.TIME.SmithChart, the `Smith Chart/`
   submodule of TIME.clockFaces.
@@ -8,7 +8,7 @@ A page and a TypeScript module; nothing is built here.
   (`APK:Softapps/TIME/TIME.clockFaces/Smith Chart/`); the Clock window's Smith Chart tab and the
   desktop tile (`display.json`) frame it. It ships inside the WEB.Frontend-Assets image with the
   rest of Softapps.
-- **Check:** `npm ci && npm test`, by hand before a push.
+- **Check:** `npm test` (no dependencies), by hand before a push.
 
 ## Delivered from the 2026-10-30 audit
 
@@ -31,3 +31,11 @@ A page and a TypeScript module; nothing is built here.
   `.apk.scripts/smoke.py` ([SMOKE](../%F0%9F%A7%A9Manual%20and%20Artifacts/SMOKE.md)): web ✅ (the
   page answers 200 on apk.audio), pushed ❌ until the owner pushes this repo — re-run smoke.py after.
   Verified: `wiki.py --check` on this path.
+- **One implementation of the clock** — owner decision 2026-10-30: the page is canonical.
+  `SmithChartClock/`, `index.ts` and `tsconfig.json` were removed (restore:
+  `git checkout e6337cb -- SmithChartClock index.ts tsconfig.json`); nothing imported them
+  (checked across POD.THIN). The parity test became a page-only test: SWR ↔ |Γ| and every
+  `RADIAL_SCALES` ruler against the RF definitions and its own inverse, minors never repeating a
+  major, plot pairs naming real hands. The typescript devDependency went with the port. Verified:
+  `npm test` 5/5. (The earlier bullets about the module and the parity contract describe what
+  this replaced.)
