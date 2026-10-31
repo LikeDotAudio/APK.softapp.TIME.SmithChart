@@ -30,7 +30,9 @@ export const GRID_MINOR: number[] = (() => {
     span(5.0, 10, 1);
     span(10, 20, 2);
     span(20, 50, 10);
-    return out;
+    // A minor value that is also a major one would be drawn (and labelled) twice;
+    // the page (smith_chart_clock.html) already drops them — test/smith.test.mjs.
+    return out.filter(v => !GRID_MAJOR.includes(v));
 })();
 
 /**

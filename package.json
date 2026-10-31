@@ -1,0 +1,14 @@
+{
+  "name": "@apkaudio/time-smithchart",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The Smith Chart Clock: smith_chart_clock.html (the page the OS Clock window frames) and the SmithChartClock/ TypeScript module.",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretest": "tsc -p tsconfig.json --outDir .test-build --noEmit false",
+    "test": "node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}
