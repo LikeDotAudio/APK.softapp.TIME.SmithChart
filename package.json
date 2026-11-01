@@ -1,6 +1,6 @@
 {
   "name": "@apkaudio/time-smithchart",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "private": true,
   "description": "The Smith Chart Clock: smith_chart_clock.html, the page the OS Clock window frames.",
   "scripts": {

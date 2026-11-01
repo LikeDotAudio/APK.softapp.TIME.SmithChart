@@ -39,3 +39,6 @@ One page; nothing is built here.
   major, plot pairs naming real hands. The typescript devDependency went with the port. Verified:
   `npm test` 5/5. (The earlier bullets about the module and the parity contract describe what
   this replaced.)
+
+## Releases
+- **Released `2.0.0`, tag `v2.0.0`** (2026-11-01, ROAD-3452, the owner's V2) — no SDK pin; every manifest says 2.0.0; GitHub release `v2.0.0`.
