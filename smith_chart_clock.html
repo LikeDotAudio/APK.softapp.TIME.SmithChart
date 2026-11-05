@@ -1007,6 +1007,10 @@
         </div>
     </main>
 
+    <!-- The shared softapp client (vendored; check.sh webshared/webtokens): the ? help
+         panel (F1) and what-to-do cards when something fails. -->
+    <script src="./vendor/apk-contracts/apk-contracts.global.js"></script>
+    <script src="./vendor/apk-softapp/apk-softapp.js"></script>
     <script>
         // ==========================================
         // 1. RF MATH & SMITH CHART COMPUTATIONS
@@ -2037,7 +2041,18 @@
             if (audioTickEnabled) {
                 btn.classList.add('active');
                 btn.innerHTML = '🔊 Audio Tick ON';
-                if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                try {
+                    if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                } catch (e) {
+                    /* No Web Audio here: put the button back and say so, instead of a tick that never comes. */
+                    audioTickEnabled = false;
+                    btn.classList.remove('active');
+                    btn.innerHTML = '🔇 Audio Tick';
+                    if (window.APKSoftapp) window.APKSoftapp.showProblem('unsupported_browser', {
+                        subject: 'Audio Tick', detail: String(e && e.message || e),
+                        fix: ['The chart keeps running without sound. A current Chrome, Edge, Firefox or Safari has Web Audio.']
+                    });
+                }
             } else {
                 btn.classList.remove('active');
                 btn.innerHTML = '🔇 Audio Tick';
@@ -4310,6 +4325,30 @@
             document.getElementById('valCompVswr').textContent = `${vswr} : 1`;
             document.getElementById('valCompRl').textContent = `${rl} dB`;
         }
+
+        // What this page takes in, puts out and lets you control (the ? / F1 panel).
+        if (window.APKSoftapp && typeof window.APKSoftapp.describe === 'function') window.APKSoftapp.describe({
+            name: 'Smith Chart Clock',
+            does: 'Reads the time as an RF impedance chart: each time field turns a wheel, and the locus gives SWR, return loss and reflection coefficient.',
+            inputs: [
+                { name: 'The time', from: "this browser's clock while LIVE; else the Year / Month / Day / Hour / Minute sliders, a preset or a time lapse" },
+                { name: 'Wheel assignment', from: 'the angle / length pickers beside each slider: which wheel each time field drives' }
+            ],
+            outputs: [
+                { name: 'The chart', to: 'the canvas on this page, with the parameter strip and day-history readouts' },
+                { name: 'Snapshot PNG', to: 'smith-chart-clock-<ms>.png download', kind: 'file' },
+                { name: 'Audio Tick', to: "a short tick on this browser's audio output each second", kind: 'audio' }
+            ],
+            controls: [
+                { name: '● LIVE / ⏸ CUSTOM', how: 'click to follow the clock or hold the slider time; moving a slider goes CUSTOM' },
+                { name: 'Time lapse', how: 'Today in 30 s / 1 min / 5 min, A week in 30 s, A year in 1 min; ■ Stop lapse' },
+                { name: 'Presets', how: 'Current Live, Smith 1939, Radar 1944, Moon Landing 1969, 1999, Y2K' },
+                { name: 'Zoom and pan', how: 'mouse wheel zooms about the cursor, drag pans, double-click or ◎ Fit resets; − Out / + In buttons' },
+                { name: 'Plot pair, trail, layers', how: 'pick the two wheels crossed, the trail length, and tick the layers to draw' },
+                { name: 'Colour engine', how: 'Date DNA, Solar Mood or RF Phasor Neon' }
+            ],
+            problems: ['unsupported_browser', 'script_error']
+        });
 
         // Start Clock
         requestAnimationFrame(frame);
