@@ -6,7 +6,7 @@
 
 | Path | Role |
 |---|---|
-| `smith_chart_clock.html` | The clock, and its only implementation. The OS runs it (desktop tile via `display.json`; the Clock window's Smith Chart tab, `OS.SMITH_CLOCK_PAGE` in `PODS/POD.THIN/OS/Clock/mount-clock/mount-clock.js`). One inline script: palette, wheels, grid, rulers, layers, panel. |
+| `smith_chart_clock.html` | The clock, and its only implementation. The OS runs it (desktop tile via `display.json`; the Clock window's Smith Chart tab, `OS.SMITH_CLOCK_PAGE` in `PODS/POD.THIN/OS/Clock/mount-clock/mount-clock.js`). Markup; `style.css`; and eight classic scripts in `js/`, in load order: `rf-math`, `state-controls`, `canvas-view`, `render-chart`, `render-loci`, `render-pivot`, `lapse-corners`, `frame`. |
 | `display.json` | OS launcher entry (`entry: smith_chart_clock.html`, `topic: APK.audio/Gui/Display/SmithChartClock`). |
 | `package.json`, `test/smith.test.mjs` | `npm test` (no dependencies): the page's maths and tables. |
 

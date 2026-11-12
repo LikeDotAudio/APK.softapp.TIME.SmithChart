@@ -14,7 +14,7 @@ One page; nothing is built here.
 
 - **Build and test harness** — `package.json` (typescript devDependency, npm 10 lock), `tsconfig.json`
   (strict) and `test/smith.test.mjs`: impedance ↔ Γ round trips and SWR ↔ |Γ|. Verified: `npm test`.
-- **Page/module parity contract** — the same test runs the page's inline script in a `node:vm`
+- **Page/module parity contract** — the same test runs the page's `js/` scripts, in order, in a `node:vm`
   sandbox with a stub DOM and checks its `RADIAL_SCALES` (ids, rows, sides, labels, precision,
   ticks, `valueOf` at seven radii), `formatScaleValue`, `rhoFromSwr`/`swrFromRho`,
   `GRID_MAJOR`/`GRID_MINOR`, `HAND_MAGS` and `PLOT_PAIRS` against `SmithChartClock/`, so the two

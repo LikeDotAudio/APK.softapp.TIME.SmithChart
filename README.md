@@ -16,7 +16,7 @@ This repository is a modular, standalone component of the APK.audio Softapps sui
 
 | File | Purpose |
 | --- | --- |
-| `smith_chart_clock.html` | **The clock** — the one implementation. The OS runs it: the desktop tile (`display.json`) and the Clock window's Smith Chart tab (`OS/Clock/mount-clock/mount-clock.js`, `OS.SMITH_CLOCK_PAGE`) frame it. One inline script: palette, wheels, grid, rulers, canvas layers, panel. |
+| `smith_chart_clock.html` | **The clock** — the one implementation. The OS runs it: the desktop tile (`display.json`) and the Clock window's Smith Chart tab (`OS/Clock/mount-clock/mount-clock.js`, `OS.SMITH_CLOCK_PAGE`) frame it. Markup only; its style is `style.css` and its script eight classic scripts in `js/` loaded in order (RF maths and rulers, state and controls, canvas view, chart, loci, pivot, lapse and corners, frame loop). |
 | `package.json`, `test/smith.test.mjs` | `npm test`: runs the page's script headless (`node:vm`, stub DOM) and checks its RF maths and tables. |
 | `URGENT SMITH CHART.md` | Design notes and outstanding work. |
 

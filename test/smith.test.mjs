@@ -1,7 +1,7 @@
 // test/smith.test.mjs — the Smith Chart Clock page's maths and tables.
 //
-// smith_chart_clock.html is the clock (its inline script is the one implementation; the
-// SmithChartClock/ TypeScript port was retired, see README). This test runs that script in
+// smith_chart_clock.html is the clock (its scripts in js/ are the one implementation; the
+// SmithChartClock/ TypeScript port was retired, see README). This test runs those scripts in
 // a node:vm sandbox whose document/window are stubs that accept any call, then checks the
 // page's own top-level tables and formulas against the RF definitions.
 import { test } from 'node:test';
@@ -22,7 +22,9 @@ function stub() {
 }
 function loadPage() {
   const html = readFileSync(join(root, 'smith_chart_clock.html'), 'utf8');
-  const code = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join('\n');
+  // The page's own classic scripts, in its load order (js/, ROAD-3765), each run on its own as
+  // the browser runs them: a later file's function is not hoisted into an earlier one.
+  const scripts = [...html.matchAll(/<script src="(\.\/js\/[^"]+)"><\/script>/g)].map((m) => readFileSync(join(root, m[1]), 'utf8'));
   const ctx = vm.createContext({
     document: stub(), window: stub(), localStorage: stub(), navigator: stub(),
     requestAnimationFrame: () => 0, cancelAnimationFrame() {}, setInterval: () => 0, setTimeout: () => 0,
@@ -30,7 +32,7 @@ function loadPage() {
     getComputedStyle: () => stub(), devicePixelRatio: 1, innerWidth: 800, innerHeight: 600,
     console: { log() {}, warn() {}, error() {} }, performance,
   });
-  vm.runInContext(code, ctx, { timeout: 5000 });
+  for (const code of scripts) vm.runInContext(code, ctx, { timeout: 5000 });
   return (expr) => vm.runInContext(expr, ctx);
 }
 const page = loadPage();

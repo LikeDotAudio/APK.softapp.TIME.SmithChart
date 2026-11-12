@@ -12,4 +12,4 @@ What the Smith Chart Clock keeps, each with the code that keeps it.
 
 ## Where the code bends a rule
 
-- **One 4,300-line page.** The clock is a single inline script; it is tested headless (`test/smith.test.mjs`) rather than split.
+- **One page, one script in eight files.** The clock is one classic script cut into `js/` at its own sections (ROAD-3765), loaded in order, sharing one global scope; it is tested headless (`test/smith.test.mjs`).
